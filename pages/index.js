@@ -1,7 +1,7 @@
 import Head from "next/head";
 import { useEffect, useRef, useState } from "react";
 
-const FORMSPREE_ENDPOINT = "https://formspree.io/f/xpqkeaqe";
+const FORMSPREE_ENDPOINT = "https://formspree.io/f/mgodjjpl";
 
 const STEPS = [
   "Fetching listing details",
