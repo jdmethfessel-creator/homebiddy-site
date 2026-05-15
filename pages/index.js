@@ -242,7 +242,6 @@ export default function Home() {
         {/* ============ DIVIDER ============ */}
         <section id="sample-report" className="divider" aria-label="Sample report intro">
           <div className="dividerKicker">Sample Report</div>
-          <div className="dividerTitle">Here&rsquo;s what you&rsquo;ll receive</div>
           <div className="dividerAddress">442 28th St, West Palm Beach FL 33407</div>
         </section>
 
