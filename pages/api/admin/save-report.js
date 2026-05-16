@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getSupabaseAdmin } from "../../../lib/supabase-server";
 import { SAVE_REPORT_TOOL, SYSTEM_PROMPT } from "../../../lib/report-parse-tool";
 import { normalizeAddress } from "../../../lib/extract-address";
+import { enrichReport } from "../../../lib/auto-report";
 
 function checkAdmin(req) {
   const expected = process.env.ADMIN_PASSWORD;
@@ -69,29 +70,46 @@ export default async function handler(req, res) {
   const claudeAddress = extracted.address ? normalizeAddress(extracted.address) : null;
   const address = claudeAddress || typedAddress;
 
+  // Run through the same enrichment as the auto-report pipeline so derived
+  // financial fields are deterministic and consistent across both entry points.
+  const enriched = enrichReport(extracted);
+
   // Build the row: column fields + jsonb data blob.
   const data = {
-    insights: extracted.insights || [],
-    script: extracted.script || "",
-    questions: extracted.questions || [],
-    comps: extracted.comps || [],
-    tiles: extracted.tiles || null,
+    insights: enriched.insights || [],
+    script: enriched.script || "",
+    questions: enriched.questions || [],
+    comps: enriched.comps || [],
+    tiles: enriched.tiles || null,
   };
 
   const row = {
     address,
-    asking_price: extracted.asking_price,
-    offer_low: extracted.offer_low,
-    offer_high: extracted.offer_high,
-    negotiability_score: extracted.negotiability_score,
-    days_on_market: extracted.days_on_market,
-    price_cuts: extracted.price_cuts,
-    zestimate_gap: extracted.zestimate_gap,
-    neighborhood: extracted.neighborhood,
-    appreciation_rate_annual: extracted.appreciation_rate_annual,
-    beds: extracted.beds,
-    baths: extracted.baths,
-    sqft: extracted.sqft,
+    asking_price: enriched.asking_price,
+    offer_low: enriched.offer_low,
+    offer_high: enriched.offer_high,
+    negotiability_score: enriched.negotiability_score,
+    days_on_market: enriched.days_on_market,
+    price_cuts: enriched.price_cuts,
+    zestimate_gap: enriched.zestimate_gap,
+    neighborhood: enriched.neighborhood,
+    appreciation_rate_annual: enriched.appreciation_rate_annual,
+    beds: enriched.beds,
+    baths: enriched.baths,
+    sqft: enriched.sqft,
+    lot_size_sqft: enriched.lot_size_sqft,
+    price_per_living_sqft: enriched.price_per_living_sqft,
+    price_per_lot_sqft: enriched.price_per_lot_sqft,
+    last_sold_price: enriched.last_sold_price,
+    last_sold_year: enriched.last_sold_year,
+    tax_assessed_value: enriched.tax_assessed_value,
+    annual_taxes_current: enriched.annual_taxes_current,
+    annual_taxes_projected: enriched.annual_taxes_projected,
+    hoa_monthly: enriched.hoa_monthly,
+    flood_zone: enriched.flood_zone,
+    estimated_monthly_mortgage: enriched.estimated_monthly_mortgage,
+    estimated_monthly_insurance: enriched.estimated_monthly_insurance,
+    estimated_monthly_total: enriched.estimated_monthly_total,
     data,
   };
 

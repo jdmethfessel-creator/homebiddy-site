@@ -75,12 +75,23 @@ alter table public.report_access enable row level security;
 insert into public.reports (
   address, asking_price, offer_low, offer_high, negotiability_score,
   days_on_market, price_cuts, zestimate_gap, neighborhood,
-  appreciation_rate_annual, beds, baths, sqft, data
+  appreciation_rate_annual, beds, baths, sqft,
+  lot_size_sqft, price_per_living_sqft, price_per_lot_sqft,
+  last_sold_price, last_sold_year, tax_assessed_value,
+  annual_taxes_current, annual_taxes_projected, hoa_monthly,
+  flood_zone, estimated_monthly_mortgage, estimated_monthly_insurance,
+  estimated_monthly_total,
+  data
 ) values (
   '442 28th St, West Palm Beach FL 33407',
   1995000, 1780000, 1850000, 8.2,
   136, 2, 110000, 'Old Northwood',
   0.038, 4, 3, 2610,
+  7500, 764.37, 266.00,
+  1450000, 2019, 1450000,
+  13775, 17575, 0,
+  'X', 9278, 1038,
+  11781,
   jsonb_build_object(
     'insights', jsonb_build_array(
       'Closed comps say $1.78M-$1.85M. Five nearby 4-bed sales in the last 6 months landed at $682-$720/sqft - this listing is priced at $764/sqft, roughly 9% above the comp band.',
@@ -121,4 +132,17 @@ insert into public.reports (
   beds = excluded.beds,
   baths = excluded.baths,
   sqft = excluded.sqft,
+  lot_size_sqft = excluded.lot_size_sqft,
+  price_per_living_sqft = excluded.price_per_living_sqft,
+  price_per_lot_sqft = excluded.price_per_lot_sqft,
+  last_sold_price = excluded.last_sold_price,
+  last_sold_year = excluded.last_sold_year,
+  tax_assessed_value = excluded.tax_assessed_value,
+  annual_taxes_current = excluded.annual_taxes_current,
+  annual_taxes_projected = excluded.annual_taxes_projected,
+  hoa_monthly = excluded.hoa_monthly,
+  flood_zone = excluded.flood_zone,
+  estimated_monthly_mortgage = excluded.estimated_monthly_mortgage,
+  estimated_monthly_insurance = excluded.estimated_monthly_insurance,
+  estimated_monthly_total = excluded.estimated_monthly_total,
   data = excluded.data;

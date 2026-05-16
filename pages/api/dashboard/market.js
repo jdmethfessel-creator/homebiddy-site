@@ -6,7 +6,7 @@ import {
 } from "../../../lib/market-intel";
 
 const FIELDS =
-  "address, neighborhood, asking_price, offer_low, days_on_market, price_cuts, appreciation_rate_annual";
+  "address, neighborhood, asking_price, offer_low, days_on_market, price_cuts, appreciation_rate_annual, sqft, price_per_living_sqft";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {

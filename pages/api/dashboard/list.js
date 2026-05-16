@@ -15,6 +15,19 @@ const REPORT_FIELDS = [
   "beds",
   "baths",
   "sqft",
+  "lot_size_sqft",
+  "price_per_living_sqft",
+  "price_per_lot_sqft",
+  "last_sold_price",
+  "last_sold_year",
+  "tax_assessed_value",
+  "annual_taxes_current",
+  "annual_taxes_projected",
+  "hoa_monthly",
+  "flood_zone",
+  "estimated_monthly_mortgage",
+  "estimated_monthly_insurance",
+  "estimated_monthly_total",
 ].join(",");
 
 export default async function handler(req, res) {

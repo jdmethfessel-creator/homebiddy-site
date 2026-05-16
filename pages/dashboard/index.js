@@ -9,12 +9,20 @@ import {
   pickUpsell,
   getMarketKey,
   aggregateMarketConditions,
+  extractCityFromAddress,
 } from "../../lib/market-intel";
 
 const MAX_COMPARE = 4;
+const MAX_BARS_PER_CARD = 4;
+const TAX_RISK_THRESHOLD = 1.25;
 
 function encodeAddress(addr) {
   return encodeURIComponent(addr);
+}
+
+function shortAddress(addr) {
+  if (!addr) return "";
+  return String(addr).split(",")[0].trim();
 }
 
 function LockIcon({ size = 12 }) {
@@ -67,6 +75,36 @@ function pickBestNegotiabilityHome(unlockedHomes) {
   }, null);
 }
 
+function pickLowest(homes, field) {
+  return homes.reduce((best, h) => {
+    const v = h.report?.[field];
+    if (v == null || isNaN(Number(v))) return best;
+    if (!best || Number(v) < Number(best.report[field])) return h;
+    return best;
+  }, null);
+}
+
+function pickConditionAdjustedHome(unlockedHomes) {
+  // Lower psf is better; longer DOM signals seller fatigue; more cuts even more.
+  // Subtract a small per-DOM-day and per-cut bonus.
+  return unlockedHomes.reduce((best, h) => {
+    const psf = Number(h.report?.price_per_living_sqft);
+    if (!psf) return best;
+    const dom = Number(h.report?.days_on_market) || 0;
+    const cuts = Number(h.report?.price_cuts) || 0;
+    const adj = psf - dom * 0.5 - cuts * 20;
+    if (!best || adj < best.adj) return { home: h, adj };
+    return best;
+  }, null)?.home;
+}
+
+function hasTaxRisk(report) {
+  const current = Number(report?.annual_taxes_current);
+  const projected = Number(report?.annual_taxes_projected);
+  if (!current || !projected) return false;
+  return projected > current * TAX_RISK_THRESHOLD;
+}
+
 function computeTotalSavings(unlockedHomes) {
   let low = 0;
   let high = 0;
@@ -78,6 +116,31 @@ function computeTotalSavings(unlockedHomes) {
     if (h.report.offer_low != null || h.report.offer_high != null) count++;
   }
   return { low, high, count };
+}
+
+function pickPrimaryCity(homes) {
+  const counts = new Map();
+  for (const h of homes) {
+    const city = extractCityFromAddress(h.address);
+    if (city) counts.set(city, (counts.get(city) || 0) + 1);
+  }
+  let best = null;
+  let bestCount = 0;
+  for (const [city, c] of counts.entries()) {
+    if (c > bestCount) { best = city; bestCount = c; }
+  }
+  return best;
+}
+
+// Submarket avg $/sqft lookup keyed by market key.
+function submarketPsfMap(markets) {
+  const m = new Map();
+  for (const x of markets || []) {
+    const key = x.market || x.neighborhood;
+    const psf = x.summary?.avg_psf;
+    if (key && psf) m.set(key, psf);
+  }
+  return m;
 }
 
 export default function Dashboard() {
@@ -135,9 +198,7 @@ export default function Dashboard() {
     }
   }, []);
 
-  useEffect(() => {
-    if (token) loadAll(token);
-  }, [token, loadAll]);
+  useEffect(() => { if (token) loadAll(token); }, [token, loadAll]);
 
   useEffect(() => {
     if (!router.isReady) return;
@@ -225,10 +286,7 @@ export default function Dashboard() {
   function toggleCompare(homeId) {
     setSelectedCompare((prev) => {
       const next = new Set(prev);
-      if (next.has(homeId)) {
-        next.delete(homeId);
-        return next;
-      }
+      if (next.has(homeId)) { next.delete(homeId); return next; }
       if (next.size >= MAX_COMPARE) {
         setCompareLimitMessage(true);
         setTimeout(() => setCompareLimitMessage(false), 4000);
@@ -239,29 +297,34 @@ export default function Dashboard() {
     });
   }
 
-  function clearCompare() {
-    setSelectedCompare(new Set());
-  }
+  function clearCompare() { setSelectedCompare(new Set()); }
 
-  const unlockedHomes = useMemo(
-    () => homes.filter((h) => h.has_access && h.report),
-    [homes]
-  );
+  const unlockedHomes = useMemo(() => homes.filter((h) => h.has_access && h.report), [homes]);
   const bestNeg = useMemo(() => pickBestNegotiabilityHome(unlockedHomes), [unlockedHomes]);
+  const bestLivingPsf = useMemo(() => pickLowest(unlockedHomes, "price_per_living_sqft"), [unlockedHomes]);
+  const bestLotPsf = useMemo(() => pickLowest(unlockedHomes, "price_per_lot_sqft"), [unlockedHomes]);
+  const condAdjusted = useMemo(() => pickConditionAdjustedHome(unlockedHomes), [unlockedHomes]);
   const totalSavings = useMemo(() => computeTotalSavings(unlockedHomes), [unlockedHomes]);
   const marketCondition = useMemo(() => aggregateMarketConditions(markets), [markets]);
+  const primaryCity = useMemo(() => pickPrimaryCity(homes), [homes]);
   const ranked = useMemo(() => rankByArbitrage(homes), [homes]);
   const maxSavings = useMemo(
     () => ranked.reduce((m, h) => (h.savings && h.savings > m ? h.savings : m), 0),
     [ranked]
   );
+  const psfByMarket = useMemo(() => submarketPsfMap(markets), [markets]);
 
   const upsell = !plan.is_unlimited ? pickUpsell(homes.length) : null;
-
   const comparing = useMemo(
     () => ranked.filter((h) => selectedCompare.has(h.id) && h.has_access && h.report),
     [ranked, selectedCompare]
   );
+
+  const planLabel = plan.is_unlimited
+    ? "unlimited plan"
+    : plan.credits_remaining > 0
+    ? `${plan.credits_remaining} credit${plan.credits_remaining === 1 ? "" : "s"}`
+    : null;
 
   return (
     <>
@@ -278,11 +341,8 @@ export default function Dashboard() {
               ) : (
                 <>
                   <strong>{homes.length}</strong> home{homes.length === 1 ? "" : "s"} saved
-                  {plan.is_unlimited
-                    ? " · unlimited plan"
-                    : plan.credits_remaining > 0
-                    ? ` · ${plan.credits_remaining} credit${plan.credits_remaining === 1 ? "" : "s"}`
-                    : ""}
+                  {planLabel ? <> · <strong>{planLabel}</strong></> : null}
+                  {primaryCity ? <> · <strong>{primaryCity}</strong></> : null}
                 </>
               )}
             </div>
@@ -306,18 +366,22 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* SECTION 1 — Top 3 answer cards */}
           <div className="answerGrid">
             <BestDealCard home={bestNeg} />
-            <TotalSavingsCard totals={totalSavings} />
-            <MarketConditionsCard condition={marketCondition} />
+            <ValueBreakdownCard
+              unlockedHomes={unlockedHomes}
+              bestLiving={bestLivingPsf}
+              bestLot={bestLotPsf}
+              conditionAdjusted={condAdjusted}
+              psfByMarket={psfByMarket}
+            />
+            <TrueMonthlyCostCard unlockedHomes={unlockedHomes} />
           </div>
 
           {upsell && (
             <UpsellBanner upsell={upsell} onClick={() => startPlanCheckout(upsell.plan)} />
           )}
 
-          {/* SECTION 2 — Ranked table */}
           {loading && <div className="dashEmpty" style={{ marginBottom: 18 }}>Loading…</div>}
           {!loading && ranked.length === 0 && (
             <div className="dashEmpty" style={{ marginBottom: 18 }}>
@@ -332,6 +396,7 @@ export default function Dashboard() {
             <RankedTable
               ranked={ranked}
               maxSavings={maxSavings}
+              psfByMarket={psfByMarket}
               selectedSet={selectedCompare}
               onToggleCompare={toggleCompare}
               onUnlock={handleUnlock}
@@ -356,7 +421,6 @@ export default function Dashboard() {
             />
           )}
 
-          {/* SECTION 3 — Market intelligence by submarket */}
           {markets.length > 0 && <MarketIntelligenceSection markets={markets} />}
         </main>
       </div>
@@ -365,17 +429,14 @@ export default function Dashboard() {
         <AddHomeModal
           token={token}
           onClose={() => setShowAdd(false)}
-          onSaved={() => {
-            setShowAdd(false);
-            loadAll(token);
-          }}
+          onSaved={() => { setShowAdd(false); loadAll(token); }}
         />
       )}
     </>
   );
 }
 
-/* ===================== TOP 3 ANSWER CARDS ===================== */
+/* ===================== SHARED ===================== */
 
 function AnswerCardShell({ kicker, children, variant }) {
   const cls = ["answerCard", variant ? `answerCard_${variant}` : ""]
@@ -397,12 +458,53 @@ function EmptyAnswerCard({ kicker, message, variant }) {
   );
 }
 
+/* ===================== CARD 1 — BEST DEAL with circular gauge ===================== */
+
+function ScoreGauge({ score }) {
+  const size = 76;
+  const stroke = 6;
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const v = Math.max(0, Math.min(10, Number(score) || 0));
+  const offset = c * (1 - v / 10);
+  const color = v >= 7 ? "#15803D" : v >= 5 ? "#F59E0B" : "#DC2626";
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#E5ECF4" strokeWidth={stroke} />
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={r}
+        fill="none"
+        stroke={color}
+        strokeWidth={stroke}
+        strokeDasharray={c}
+        strokeDashoffset={offset}
+        strokeLinecap="round"
+        transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        style={{ transition: "stroke-dashoffset 0.6s ease" }}
+      />
+      <text
+        x={size / 2}
+        y={size / 2 + 6}
+        textAnchor="middle"
+        fontFamily='"Fraunces", Georgia, serif'
+        fontSize="20"
+        fontWeight="700"
+        fill="#0A2540"
+      >
+        {v.toFixed(1)}
+      </text>
+    </svg>
+  );
+}
+
 function BestDealCard({ home }) {
   if (!home || !home.report) {
     return (
       <EmptyAnswerCard
-        kicker="Your Best Deal Right Now"
-        message="Unlock a report to see your strongest negotiation opportunity."
+        kicker="Your Best Deal"
+        message="Unlock a report to surface your strongest negotiation opportunity."
       />
     );
   }
@@ -411,7 +513,7 @@ function BestDealCard({ home }) {
   const score = r.negotiability_score;
   const buy = score != null && score >= 7;
   return (
-    <AnswerCardShell kicker="Your Best Deal Right Now">
+    <AnswerCardShell kicker="Your Best Deal">
       <div className="answerHeaderRow">
         <Link href={`/dashboard/${encodeAddress(home.address)}`} className="answerAddress">
           {home.address}
@@ -422,11 +524,14 @@ function BestDealCard({ home }) {
           </span>
         )}
       </div>
-      <div className="answerBigStat answerStatGreen">
-        Save up to {formatMoney(savings)}
-      </div>
-      <div className="answerSubline">
-        <strong>{score}</strong> / 10 negotiability · most negotiable home in your list
+      <div className="bestDealRow">
+        <div className="bestDealStat">
+          <div className="answerBigStat answerStatGreen">Save up to {formatMoney(savings)}</div>
+          <div className="answerSubline">
+            <strong>Most negotiable</strong> home in your list
+          </div>
+        </div>
+        <ScoreGauge score={score} />
       </div>
       <Link href={`/dashboard/${encodeAddress(home.address)}`} className="answerLink">
         View report →
@@ -435,46 +540,152 @@ function BestDealCard({ home }) {
   );
 }
 
-function TotalSavingsCard({ totals }) {
-  if (!totals.count) {
+/* ===================== CARD 2 — VALUE BREAKDOWN with race bars ===================== */
+
+function ValueBreakdownCard({ unlockedHomes, bestLiving, bestLot, conditionAdjusted, psfByMarket }) {
+  if (unlockedHomes.length === 0) {
     return (
       <EmptyAnswerCard
-        kicker="Total Savings on the Table"
-        message="Unlock reports to see aggregated savings across your list."
-        variant="dark"
+        kicker="Value Breakdown"
+        message="Unlock reports to compare price per square foot across your list."
       />
     );
   }
-  const low = Math.max(0, totals.low);
-  const high = Math.max(0, totals.high);
   return (
-    <AnswerCardShell kicker="Total Savings on the Table" variant="dark">
-      <div className="answerBigStat">
-        You could save {formatMoney(low)} – {formatMoney(high)}
-      </div>
-      <div className="answerSubline answerSublineDark">
-        across <strong>{totals.count}</strong> home{totals.count === 1 ? "" : "s"} vs. current asking prices
-      </div>
+    <AnswerCardShell kicker="Value Breakdown">
+      <ValueMetricRow
+        label="Best $/sqft living"
+        sublabel="Most space for your money"
+        winner={bestLiving}
+        field="price_per_living_sqft"
+        unlockedHomes={unlockedHomes}
+        psfByMarket={psfByMarket}
+      />
+      <ValueMetricRow
+        label="Best $/sqft lot"
+        sublabel="Best land value"
+        winner={bestLot}
+        field="price_per_lot_sqft"
+        unlockedHomes={unlockedHomes}
+        psfByMarket={null}
+      />
+      {conditionAdjusted && (
+        <div className="answerSubline valueAdjusted">
+          <strong>Condition-adjusted:</strong> {shortAddress(conditionAdjusted.address)} may offer
+          the best effective value after factoring in DOM and price cuts.
+        </div>
+      )}
     </AnswerCardShell>
   );
 }
 
-function MarketConditionsCard({ condition }) {
-  if (!condition) {
+function ValueMetricRow({ label, sublabel, winner, field, unlockedHomes, psfByMarket }) {
+  const homes = unlockedHomes
+    .filter((h) => h.report?.[field] != null && !isNaN(Number(h.report[field])))
+    .map((h) => ({ ...h, _v: Number(h.report[field]) }))
+    .sort((a, b) => a._v - b._v)
+    .slice(0, MAX_BARS_PER_CARD);
+  if (homes.length === 0) {
+    return (
+      <div className="valueRow">
+        <div className="valueRowHeader">
+          <div className="valueRowLabel">{label}</div>
+          <div className="valueRowSub">{sublabel}</div>
+        </div>
+        <div className="answerEmpty" style={{ fontSize: 12 }}>
+          Not enough data yet.
+        </div>
+      </div>
+    );
+  }
+  const min = homes[0]._v;
+  const winnerSubmarket = winner ? getMarketKey(winner.report) : null;
+  const marketAvg = winnerSubmarket && psfByMarket ? psfByMarket.get(winnerSubmarket) : null;
+  return (
+    <div className="valueRow">
+      <div className="valueRowHeader">
+        <div className="valueRowLabel">{label}</div>
+        <div className="valueRowSub">{sublabel}</div>
+      </div>
+      <div className="valueBars">
+        {homes.map((h) => {
+          const pct = Math.max(8, Math.round((min / h._v) * 100));
+          const isWinner = winner && h.id === winner.id;
+          return (
+            <div key={h.id} className="valueBarRow">
+              <div className="valueBarLabel">
+                <span className="valueBarPsf">${Math.round(h._v).toLocaleString()}</span>
+                <span className="valueBarAddr">{shortAddress(h.address)}</span>
+              </div>
+              <div className="valueRaceBar">
+                <div
+                  className={`valueRaceFill${isWinner ? " valueRaceFillWin" : ""}`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {marketAvg && winner && (
+        <div className="valueMarketRef">
+          {winnerSubmarket} avg <strong>${marketAvg.toLocaleString()}/sqft</strong>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ===================== CARD 3 — TRUE MONTHLY COST ===================== */
+
+function TrueMonthlyCostCard({ unlockedHomes }) {
+  const homesWithTotal = unlockedHomes
+    .filter((h) => h.report?.estimated_monthly_total != null)
+    .map((h) => ({ ...h, _m: Number(h.report.estimated_monthly_total) }))
+    .sort((a, b) => a._m - b._m);
+  if (homesWithTotal.length === 0) {
     return (
       <EmptyAnswerCard
-        kicker="Market Conditions"
-        message="Save a home to see local market conditions."
+        kicker="True Monthly Cost"
+        message="Unlock reports to see fully-loaded monthly carry estimates."
       />
     );
   }
-  const variant = temperatureClass(condition.temperature);
+  const min = homesWithTotal[0]._m;
+  const max = homesWithTotal[homesWithTotal.length - 1]._m;
   return (
-    <AnswerCardShell kicker="Market Conditions" variant={variant}>
-      <div className="answerBigTemp">{condition.temperature}</div>
+    <AnswerCardShell kicker="True Monthly Cost">
+      <div className="answerBigStat">
+        {formatMoney(min)} – {formatMoney(max)}<span className="monthlyPerMo">/mo</span>
+      </div>
+      <div className="monthlyBars">
+        {homesWithTotal.slice(0, MAX_BARS_PER_CARD).map((h) => {
+          const range = Math.max(1, max - min);
+          const t = (h._m - min) / range;
+          const pct = Math.max(8, Math.round(t * 90 + 10));
+          const fillClass =
+            t < 0.34 ? "monthlyFillLow" : t < 0.67 ? "monthlyFillMid" : "monthlyFillHigh";
+          const taxRisk = hasTaxRisk(h.report);
+          return (
+            <div key={h.id} className="monthlyRow">
+              <div className="monthlyMeta">
+                <span className="monthlyAddr">{shortAddress(h.address)}</span>
+                <span className="monthlyVal">{formatMoney(h._m)}</span>
+              </div>
+              <div className="monthlyBar">
+                <div className={`monthlyBarFill ${fillClass}`} style={{ width: `${pct}%` }} />
+              </div>
+              {taxRisk && (
+                <div className="taxFlag" title="Projected post-sale taxes are more than 25% above current bill">
+                  ⚠ Tax reassessment risk
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
       <div className="answerSubline">
-        Avg DOM <strong>{condition.avg_dom}</strong> · typical{" "}
-        <strong>{condition.avg_discount_pct}%</strong> off list
+        Estimates: 20% down, 6.8% 30yr fixed + projected post-sale tax reassessment.
       </div>
     </AnswerCardShell>
   );
@@ -485,6 +696,7 @@ function MarketConditionsCard({ condition }) {
 function RankedTable({
   ranked,
   maxSavings,
+  psfByMarket,
   selectedSet,
   onToggleCompare,
   onUnlock,
@@ -503,10 +715,14 @@ function RankedTable({
               <th className="rankedColRank">#</th>
               <th className="rankedColProp">Property</th>
               <th>Asking</th>
-              <th>Your offer range</th>
-              <th>Potential savings</th>
+              <th>Offer range</th>
+              <th>Savings</th>
+              <th>$/sqft</th>
+              <th>$/lot</th>
               <th>Score</th>
               <th>DOM</th>
+              <th>Monthly</th>
+              <th>Tax</th>
               <th className="rankedColDeal">Deal</th>
               <th className="rankedColActions"></th>
             </tr>
@@ -521,6 +737,7 @@ function RankedTable({
                   home={h}
                   rank={unlocked && h.savings != null ? unlockedRank : null}
                   maxSavings={maxSavings}
+                  psfByMarket={psfByMarket}
                   selected={selectedSet.has(h.id)}
                   onToggleCompare={() => onToggleCompare(h.id)}
                   onUnlock={() => onUnlock(h)}
@@ -539,16 +756,9 @@ function RankedTable({
 }
 
 function RankedRow({
-  home,
-  rank,
-  maxSavings,
-  selected,
-  onToggleCompare,
-  onUnlock,
-  onRemove,
-  pending,
-  credits,
-  unlimited,
+  home, rank, maxSavings, psfByMarket,
+  selected, onToggleCompare, onUnlock, onRemove,
+  pending, credits, unlimited,
 }) {
   const r = home.report || {};
   const unlocked = home.has_access && home.report;
@@ -558,6 +768,10 @@ function RankedRow({
     unlocked && home.savings && maxSavings
       ? Math.max(2, Math.round((home.savings / maxSavings) * 100))
       : 0;
+  const marketPsf = unlocked && submarket ? psfByMarket.get(submarket) : null;
+  const psf = unlocked ? Number(r.price_per_living_sqft) : null;
+  let psfDir = null;
+  if (psf && marketPsf) psfDir = psf > marketPsf * 1.02 ? "up" : psf < marketPsf * 0.98 ? "down" : "even";
 
   return (
     <tr className={unlocked ? "" : "rankedLockedRow"}>
@@ -565,18 +779,13 @@ function RankedRow({
         {rank != null ? <span className="rankBadgeNum">#{rank}</span> : <span className="rankBadgeMuted">—</span>}
       </td>
       <td className="rankedColProp">
-        <Link
-          href={`/dashboard/${encodeAddress(home.address)}`}
-          className="rankAddress"
-        >
+        <Link href={`/dashboard/${encodeAddress(home.address)}`} className="rankAddress">
           {home.address}
         </Link>
         {submarket && <span className="rankBadge">{submarket}</span>}
       </td>
       <td>
-        <span className="rankAsk">
-          {r.asking_price ? formatMoneyFull(r.asking_price) : "—"}
-        </span>
+        <span className="rankAsk">{r.asking_price ? formatMoneyFull(r.asking_price) : "—"}</span>
       </td>
       <td>
         {unlocked ? (
@@ -584,7 +793,7 @@ function RankedRow({
             {formatMoney(r.offer_low)}–{formatMoney(r.offer_high)}
           </span>
         ) : (
-          <span className="dashBlur">$X,XXX,XXX–$X,XXX,XXX</span>
+          <span className="dashBlur">$X,XXX,XXX</span>
         )}
       </td>
       <td>
@@ -592,6 +801,24 @@ function RankedRow({
           <span className="rankSavings">{formatMoney(home.savings)}</span>
         ) : (
           <span className="dashBlur">$XXX,XXX</span>
+        )}
+      </td>
+      <td>
+        {unlocked && psf ? (
+          <span className="rankPsf">
+            ${Math.round(psf).toLocaleString()}
+            {psfDir === "up" && <span className="psfArrow psfArrowUp" title="above submarket avg">▲</span>}
+            {psfDir === "down" && <span className="psfArrow psfArrowDown" title="below submarket avg">▼</span>}
+          </span>
+        ) : (
+          <span className="dashBlur">$XXX</span>
+        )}
+      </td>
+      <td>
+        {unlocked && r.price_per_lot_sqft != null ? (
+          <span className="rankPsf">${Math.round(Number(r.price_per_lot_sqft)).toLocaleString()}</span>
+        ) : (
+          <span className="dashMuted">—</span>
         )}
       </td>
       <td>
@@ -605,19 +832,23 @@ function RankedRow({
         )}
       </td>
       <td>
-        {unlocked ? (
-          <span className="rankDom">{r.days_on_market ?? "—"}</span>
+        {unlocked ? <span className="rankDom">{r.days_on_market ?? "—"}</span> : <span className="dashBlur">XXX</span>}
+      </td>
+      <td>
+        {unlocked && r.estimated_monthly_total != null ? (
+          <span className="rankMonthly">{formatMoney(r.estimated_monthly_total)}</span>
         ) : (
-          <span className="dashBlur">XXX</span>
+          <span className="dashMuted">—</span>
         )}
+      </td>
+      <td>
+        {unlocked && hasTaxRisk(r) ? (
+          <span className="taxFlagSmall" title="Projected post-sale taxes are more than 25% above current bill">⚠</span>
+        ) : null}
       </td>
       <td className="rankedColDeal">
         {unlocked && home.savings ? (
-          <div
-            className="dealBar"
-            title={`${dealPct}% of top deal`}
-            aria-label={`Deal strength ${dealPct} percent of top deal`}
-          >
+          <div className="dealBar" title={`${dealPct}% of top deal`} aria-label={`Deal strength ${dealPct} percent of top deal`}>
             <div className="dealBarFill" style={{ width: `${dealPct}%` }} />
           </div>
         ) : (
@@ -628,50 +859,19 @@ function RankedRow({
         {unlocked ? (
           <div className="rankActionsBox">
             <label className="rankCheckLabel" title="Add to comparison">
-              <input
-                type="checkbox"
-                checked={selected}
-                onChange={onToggleCompare}
-                className="rankCheck"
-              />
+              <input type="checkbox" checked={selected} onChange={onToggleCompare} className="rankCheck" />
               <span className="rankCheckText">Compare</span>
             </label>
-            <Link
-              href={`/dashboard/${encodeAddress(home.address)}`}
-              className="rankViewBtn"
-            >
-              View →
-            </Link>
-            <button
-              type="button"
-              className="rankRemoveBtn"
-              onClick={onRemove}
-              aria-label="Remove"
-              title="Remove"
-            >
-              ×
-            </button>
+            <Link href={`/dashboard/${encodeAddress(home.address)}`} className="rankViewBtn">View →</Link>
+            <button type="button" className="rankRemoveBtn" onClick={onRemove} aria-label="Remove" title="Remove">×</button>
           </div>
         ) : (
           <div className="rankActionsBox">
-            <button
-              type="button"
-              className="rankUnlockBtn"
-              onClick={onUnlock}
-              disabled={pending}
-            >
+            <button type="button" className="rankUnlockBtn" onClick={onUnlock} disabled={pending}>
               <LockIcon size={11} />
               {pending ? "..." : unlockLabel(home, credits, unlimited)}
             </button>
-            <button
-              type="button"
-              className="rankRemoveBtn"
-              onClick={onRemove}
-              aria-label="Remove"
-              title="Remove"
-            >
-              ×
-            </button>
+            <button type="button" className="rankRemoveBtn" onClick={onRemove} aria-label="Remove" title="Remove">×</button>
           </div>
         )}
       </td>
@@ -718,9 +918,7 @@ function MarketCard({ item }) {
     <div className="dashMarketCard">
       <div className="dashMarketHeaderRow">
         <div className="dashMarketName">{name}</div>
-        <span className={`dashMarketBadge dashMarketBadge_${tempClass}`}>
-          {s.temperature}
-        </span>
+        <span className={`dashMarketBadge dashMarketBadge_${tempClass}`}>{s.temperature}</span>
       </div>
       <div className="dashMarketRow">
         <div>
@@ -728,11 +926,15 @@ function MarketCard({ item }) {
           <strong>{s.avg_dom}</strong>
         </div>
         <div>
-          <div className="dashCardKicker">Typical off-list</div>
+          <div className="dashCardKicker">Off-list</div>
           <strong>{s.avg_discount_pct}%</strong>
         </div>
         <div>
-          <div className="dashCardKicker">Saved here</div>
+          <div className="dashCardKicker">Avg $/sqft</div>
+          <strong>{s.avg_psf ? `$${s.avg_psf.toLocaleString()}` : "—"}</strong>
+        </div>
+        <div>
+          <div className="dashCardKicker">Saved</div>
           <strong>{saved}</strong>
         </div>
       </div>
@@ -761,7 +963,7 @@ function UpsellBanner({ upsell, onClick }) {
   );
 }
 
-/* ===================== INLINE COMPARE PANEL ===================== */
+/* ===================== INLINE COMPARE ===================== */
 
 function InlineCompare({ comparing, onRemove, onClear }) {
   return (
@@ -782,10 +984,7 @@ function InlineCompare({ comparing, onRemove, onClear }) {
               {comparing.map((h) => (
                 <th key={h.id}>
                   <div className="compareColHead">
-                    <Link
-                      href={`/dashboard/${encodeAddress(h.address)}`}
-                      className="compareColAddr"
-                    >
+                    <Link href={`/dashboard/${encodeAddress(h.address)}`} className="compareColAddr">
                       {h.address}
                     </Link>
                     <button
@@ -802,47 +1001,68 @@ function InlineCompare({ comparing, onRemove, onClear }) {
             </tr>
           </thead>
           <tbody>
+            <CompareRow label="Asking" cells={comparing.map((h) => formatMoneyFull(h.report.asking_price))} />
             <CompareRow
-              label="Asking Price"
-              cells={comparing.map((h) => formatMoneyFull(h.report.asking_price))}
+              label="Offer Range"
+              cells={comparing.map((h) => `${formatMoney(h.report.offer_low)}–${formatMoney(h.report.offer_high)}`)}
+              accent
+            />
+            <CompareRow label="Negotiability" cells={comparing.map((h) => `${h.report.negotiability_score} / 10`)} />
+            <CompareRow label="Days on Market" cells={comparing.map((h) => h.report.days_on_market ?? "—")} />
+            <CompareRow label="Price Cuts" cells={comparing.map((h) => h.report.price_cuts ?? 0)} />
+            <CompareRow
+              label="$/sqft Living"
+              cells={comparing.map((h) =>
+                h.report.price_per_living_sqft != null
+                  ? `$${Math.round(Number(h.report.price_per_living_sqft)).toLocaleString()}`
+                  : "—"
+              )}
             />
             <CompareRow
-              label="Your Offer Range"
-              cells={comparing.map(
-                (h) => `${formatMoney(h.report.offer_low)}–${formatMoney(h.report.offer_high)}`
+              label="$/sqft Lot"
+              cells={comparing.map((h) =>
+                h.report.price_per_lot_sqft != null
+                  ? `$${Math.round(Number(h.report.price_per_lot_sqft)).toLocaleString()}`
+                  : "—"
+              )}
+            />
+            <CompareRow
+              label="Est. Monthly"
+              cells={comparing.map((h) =>
+                h.report.estimated_monthly_total != null
+                  ? formatMoney(h.report.estimated_monthly_total)
+                  : "—"
               )}
               accent
             />
             <CompareRow
-              label="Negotiability Score"
-              cells={comparing.map((h) => `${h.report.negotiability_score} / 10`)}
-            />
-            <CompareRow
-              label="Days on Market"
-              cells={comparing.map((h) => h.report.days_on_market ?? "—")}
-            />
-            <CompareRow
-              label="Price Cuts"
-              cells={comparing.map((h) => h.report.price_cuts ?? 0)}
-            />
-            <CompareRow
-              label="Zestimate Gap"
+              label="Tax Risk"
               cells={comparing.map((h) =>
-                h.report.zestimate_gap != null ? formatMoney(h.report.zestimate_gap) : "—"
+                hasTaxRisk(h.report) ? <span className="taxFlagSmall" key="t">⚠ Reassessment</span> : "—"
               )}
             />
             <CompareRow
-              label="Submarket"
-              cells={comparing.map((h) => getMarketKey(h.report) || "—")}
+              label="Last Sold"
+              cells={comparing.map((h) => {
+                const p = h.report.last_sold_price;
+                const y = h.report.last_sold_year;
+                if (!p && !y) return "—";
+                return `${p ? formatMoney(p) : "—"}${y ? ` (${y})` : ""}`;
+              })}
             />
+            <CompareRow
+              label="Flood Zone"
+              cells={comparing.map((h) => h.report.flood_zone || "—")}
+            />
+            <CompareRow label="Zestimate Gap" cells={comparing.map((h) =>
+              h.report.zestimate_gap != null ? formatMoney(h.report.zestimate_gap) : "—"
+            )} />
+            <CompareRow label="Submarket" cells={comparing.map((h) => getMarketKey(h.report) || "—")} />
             <tr>
               <th></th>
               {comparing.map((h) => (
                 <td key={h.id}>
-                  <Link
-                    href={`/dashboard/${encodeAddress(h.address)}`}
-                    className="compareViewBtn"
-                  >
+                  <Link href={`/dashboard/${encodeAddress(h.address)}`} className="compareViewBtn">
                     View full report
                   </Link>
                 </td>
