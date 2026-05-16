@@ -12,6 +12,11 @@ const STEPS = [
 // until the server actually returns — Claude + PDF + email takes ~30-60s.
 const STEP_INTERVAL_MS = 11000;
 
+// localStorage key for the URL+email captured before redirecting to Stripe,
+// so we can auto-trigger fulfillment when the user returns with ?paid=1.
+const PENDING_KEY = "homebiddy_pending_submit";
+const PENDING_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
 const PRICING = [
   {
     id: "single",
@@ -105,16 +110,41 @@ export default function Home() {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     if (params.get("paid") === "1") {
-      setReturnNotice("paid");
-      // After Stripe payment, fulfillment happens on the next form submit.
-      // Just show the canceled notice and let user resubmit.
       window.history.replaceState({}, document.title, window.location.pathname);
+      // Auto-submit using the URL+email we stashed before redirecting to Stripe.
+      let pending = null;
+      try {
+        const raw = window.localStorage.getItem(PENDING_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (
+            parsed?.url &&
+            parsed?.email &&
+            typeof parsed.ts === "number" &&
+            Date.now() - parsed.ts < PENDING_TTL_MS
+          ) {
+            pending = parsed;
+          }
+          window.localStorage.removeItem(PENDING_KEY);
+        }
+      } catch {}
+      if (pending) {
+        setUrl(pending.url);
+        setEmail(pending.email);
+        // Retry once on payment_required to absorb the webhook-vs-redirect race.
+        submitReport({ urlValue: pending.url, emailValue: pending.email, isAutoFromPayment: true });
+      } else {
+        setReturnNotice("paid");
+        const t = setTimeout(() => setReturnNotice(null), 6000);
+        return () => clearTimeout(t);
+      }
     } else if (params.get("canceled") === "1") {
       setReturnNotice("canceled");
       window.history.replaceState({}, document.title, window.location.pathname);
       const t = setTimeout(() => setReturnNotice(null), 4500);
       return () => clearTimeout(t);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -140,56 +170,87 @@ export default function Home() {
     timeouts.current = [];
   }
 
-  async function handleSubmit(e) {
-    e.preventDefault();
-    if (!url || !email || overlayState === "processing") return;
-
+  // Core submission flow. `isAutoFromPayment` enables a single retry on
+  // payment_required to absorb the gap between the Stripe redirect and the
+  // webhook updating public.users (the webhook usually fires first, but not
+  // always).
+  async function submitReport({ urlValue, emailValue, isAutoFromPayment = false }) {
+    if (!urlValue || !emailValue || overlayState === "processing") return;
     setErrorMessage("");
     startProcessingAnimation();
 
-    let json;
-    try {
-      const r = await fetch("/api/submit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ listing_url: url, email }),
-      });
-      json = await r.json();
-      if (!r.ok) {
+    const maxAttempts = isAutoFromPayment ? 3 : 1;
+    const retryDelays = [0, 4000, 8000]; // ms before each attempt
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      if (retryDelays[attempt] > 0) {
+        await new Promise((r) => setTimeout(r, retryDelays[attempt]));
+      }
+
+      let json;
+      try {
+        const r = await fetch("/api/submit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ listing_url: urlValue, email: emailValue }),
+        });
+        json = await r.json();
+        if (!r.ok) {
+          cancelProcessingAnimation();
+          setErrorMessage(json?.error || "Something went wrong. Try again.");
+          setOverlayState("error");
+          return;
+        }
+      } catch (err) {
         cancelProcessingAnimation();
-        setErrorMessage(json?.error || "Something went wrong. Try again.");
+        setErrorMessage("Network error. Try again.");
         setOverlayState("error");
         return;
       }
-    } catch (err) {
+
+      if (json.status === "submitted") {
+        cancelProcessingAnimation();
+        setActiveStep(STEPS.length);
+        setOverlayState("success");
+        return;
+      }
+
+      if (json.status === "payment_required") {
+        // If we're returning from a paid Stripe session and the webhook hasn't
+        // updated quota yet, wait briefly and retry. After max attempts, fall
+        // back to the pricing modal so the user can try again manually.
+        if (isAutoFromPayment && attempt < maxAttempts - 1) {
+          continue;
+        }
+        cancelProcessingAnimation();
+        setOverlayState("idle");
+        setShowPricing(true);
+        return;
+      }
+
       cancelProcessingAnimation();
-      setErrorMessage("Network error. Try again.");
+      setErrorMessage("Unexpected response. Try again.");
       setOverlayState("error");
       return;
     }
+  }
 
-    if (json.status === "submitted") {
-      cancelProcessingAnimation();
-      setActiveStep(STEPS.length); // all checkmarks
-      setOverlayState("success");
-      return;
-    }
-
-    if (json.status === "payment_required") {
-      cancelProcessingAnimation();
-      setOverlayState("idle");
-      setShowPricing(true);
-      return;
-    }
-
-    cancelProcessingAnimation();
-    setErrorMessage("Unexpected response. Try again.");
-    setOverlayState("error");
+  function handleSubmit(e) {
+    e.preventDefault();
+    submitReport({ urlValue: url, emailValue: email, isAutoFromPayment: false });
   }
 
   async function pickPlan(planId) {
     if (checkoutLoading) return;
     setCheckoutLoading(planId);
+    // Persist URL + email so we can auto-trigger fulfillment when Stripe
+    // redirects back with ?paid=1.
+    try {
+      window.localStorage.setItem(
+        PENDING_KEY,
+        JSON.stringify({ url, email, plan: planId, ts: Date.now() })
+      );
+    } catch {}
     try {
       const r = await fetch("/api/checkout", {
         method: "POST",
@@ -201,10 +262,13 @@ export default function Home() {
         window.location.href = json.url;
         return;
       }
+      // Checkout failed before redirect — drop the pending snapshot.
+      try { window.localStorage.removeItem(PENDING_KEY); } catch {}
       setErrorMessage(json?.error || "Could not start checkout.");
       setShowPricing(false);
       setOverlayState("error");
     } catch (err) {
+      try { window.localStorage.removeItem(PENDING_KEY); } catch {}
       setErrorMessage("Network error starting checkout.");
       setShowPricing(false);
       setOverlayState("error");
@@ -280,6 +344,11 @@ export default function Home() {
           {returnNotice === "canceled" && (
             <div className="canceledNote" role="status">
               Payment canceled. Pick a plan to continue when you&rsquo;re ready.
+            </div>
+          )}
+          {returnNotice === "paid" && (
+            <div className="canceledNote" role="status" style={{ background: "#ECFDF5", color: "#065F46" }}>
+              Payment received. Paste the listing URL again and hit Go to generate your report.
             </div>
           )}
 

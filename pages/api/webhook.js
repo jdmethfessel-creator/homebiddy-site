@@ -230,8 +230,11 @@ async function handlePlanPurchase(session, res) {
     return res.status(200).json({ received: true, error: "missing metadata" });
   }
 
-  await submitToFormspree({ listing_url, email });
-
+  // Note: we no longer call Formspree here — the homepage flow auto-fulfills
+  // on the next /api/submit. The webhook only grants entitlement.
+  // Reset report_count to 0 so the auto-submit (or any subsequent submit)
+  // has the full plan quota available. The auto-submit increments back to 1
+  // when the report is actually delivered.
   try {
     const supabase = getSupabaseAdmin();
     const { data: existing } = await supabase
@@ -242,13 +245,13 @@ async function handlePlanPurchase(session, res) {
     if (existing) {
       const { error: updateErr } = await supabase
         .from("users")
-        .update({ plan, report_count: 1 })
+        .update({ plan, report_count: 0 })
         .eq("email", email);
       if (updateErr) console.error("Supabase update error:", updateErr);
     } else {
       const { error: insertErr } = await supabase
         .from("users")
-        .insert({ email, plan, report_count: 1 });
+        .insert({ email, plan, report_count: 0 });
       if (insertErr) console.error("Supabase insert error:", insertErr);
     }
   } catch (err) {
