@@ -335,7 +335,7 @@ export default function Home() {
         <meta property="og:title" content="HomeBiddy — Stop guessing. Bid with proof." />
         <meta
           property="og:description"
-          content="Free comp-backed offer reports in under 2 minutes."
+          content="Free comp-backed offer reports in under 1 minute."
         />
         <link rel="icon" href="/favicon.ico" />
       </Head>
@@ -378,7 +378,7 @@ export default function Home() {
           <p className="heroSub">
             Paste any Zillow or Realtor.com link. We analyze closed sales,
             listing data, market dynamics and nearby comps to give you a
-            data-backed offer in under 2 minutes.
+            data-backed offer in under 1 minute.
           </p>
 
           {returnNotice === "canceled" && (
