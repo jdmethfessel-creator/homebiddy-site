@@ -20,13 +20,13 @@ const PRICING = [
     label: "5 Reports",
     price: "$49.99",
     hint: "Just $10 per report",
-    badge: "Best value",
   },
   {
     id: "unlimited",
     label: "Unlimited",
     price: "$69.99",
     hint: "Unlimited reports — one-time payment",
+    badge: "Best value",
   },
 ];
 
