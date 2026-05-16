@@ -82,17 +82,70 @@ function savingsFor(home) {
   return asking_price - offer_low;
 }
 
-function rankByArbitrage(homes) {
+// Get the numeric value of a home by sort key. Returns null for missing
+// values so the sort routine can park them at the bottom regardless of
+// direction.
+function getSortValue(home, key) {
+  const r = home.report || {};
+  switch (key) {
+    case "asking": return numOrNull(r.asking_price);
+    case "offer_range": return numOrNull(r.offer_low);
+    case "offer_gap": return home.savings;
+    case "home_sqft": return numOrNull(r.sqft);
+    case "lot_sqft": return numOrNull(r.lot_size_sqft);
+    case "psf": return numOrNull(r.price_per_living_sqft);
+    case "lot_psf": return numOrNull(r.price_per_lot_sqft);
+    case "score": return numOrNull(r.negotiability_score);
+    case "land": return numOrNull(r.land_arbitrage_score);
+    case "dom": return numOrNull(r.days_on_market);
+    case "monthly": return numOrNull(r.estimated_monthly_total);
+    default: return null;
+  }
+}
+
+function numOrNull(v) {
+  if (v == null) return null;
+  const n = Number(v);
+  return isNaN(n) ? null : n;
+}
+
+function sortHomes(homes, key, dir) {
+  const dirMul = dir === "asc" ? 1 : -1;
   return [...homes]
     .map((h) => ({ ...h, savings: savingsFor(h) }))
     .sort((a, b) => {
-      if (a.savings == null && b.savings == null) {
+      const av = getSortValue(a, key);
+      const bv = getSortValue(b, key);
+      // Stable tie-break by most-recently-saved.
+      if (av == null && bv == null) {
         return new Date(b.created_at) - new Date(a.created_at);
       }
-      if (a.savings == null) return 1;
-      if (b.savings == null) return -1;
-      return b.savings - a.savings;
+      if (av == null) return 1; // null always at the bottom
+      if (bv == null) return -1;
+      if (av === bv) return new Date(b.created_at) - new Date(a.created_at);
+      return (av - bv) * dirMul;
     });
+}
+
+// Data-quality flag for the offer range. Claude can mark a report with
+// data.offer_range_flagged when it suspects bad listing data; we also
+// apply a client-side sanity check so any home whose offer_low is more
+// than 25% below asking gets the ⚠ Verify tag regardless of what was
+// stored at parse time.
+function offerRangeFlagged(report) {
+  if (!report) return false;
+  if (report?.data?.offer_range_flagged) return true;
+  const asking = Number(report.asking_price);
+  const offerLow = Number(report.offer_low);
+  if (!asking || !offerLow) return false;
+  return (asking - offerLow) / asking > 0.25;
+}
+
+function offerRangeFlagNote(report) {
+  return (
+    report?.data?.offer_range_flag_note ||
+    "Offer range is more than 25% below asking — verify listing data before relying on it."
+  );
 }
 
 function pickBestNegotiabilityHome(unlockedHomes) {
@@ -204,6 +257,24 @@ export default function Dashboard() {
   // delete.
   const [pendingRemoval, setPendingRemoval] = useState(null);
   const [hiddenHomeIds, setHiddenHomeIds] = useState(() => new Set());
+  // Table sort state. Default is negotiability score descending so the
+  // strongest deal is at the top on first render. Clicking a sortable
+  // header toggles direction; clicking a different column resets to a
+  // sensible default direction for that metric.
+  const [sortKey, setSortKey] = useState("score");
+  const [sortDir, setSortDir] = useState("desc");
+
+  function handleSort(key) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setSortKey(key);
+    // For metrics where lower is better, default to ascending; for
+    // everything else (score/land/DOM/offer-gap/sqft) default to desc.
+    const ascByDefault = new Set(["asking", "offer_range", "psf", "lot_psf", "monthly"]);
+    setSortDir(ascByDefault.has(key) ? "asc" : "desc");
+  }
 
   useEffect(() => {
     const sb = getSupabaseClient();
@@ -464,7 +535,10 @@ export default function Dashboard() {
   const totalSavings = useMemo(() => computeTotalSavings(unlockedHomes), [unlockedHomes]);
   const marketCondition = useMemo(() => aggregateMarketConditions(markets), [markets]);
   const primaryCity = useMemo(() => pickPrimaryCity(visibleHomes), [visibleHomes]);
-  const ranked = useMemo(() => rankByArbitrage(visibleHomes), [visibleHomes]);
+  const ranked = useMemo(
+    () => sortHomes(visibleHomes, sortKey, sortDir),
+    [visibleHomes, sortKey, sortDir]
+  );
   const maxSavings = useMemo(
     () => ranked.reduce((m, h) => (h.savings && h.savings > m ? h.savings : m), 0),
     [ranked]
@@ -547,9 +621,7 @@ export default function Dashboard() {
               <BestDealCard home={bestNeg} />
               <ValueBreakdownCard
                 unlockedHomes={unlockedHomes}
-                bestLiving={bestLivingPsf}
-                bestLot={bestLotPsf}
-                bestLandPlay={bestLandPlay}
+                psfByMarket={psfByMarket}
               />
               <TrueMonthlyCostCard unlockedHomes={unlockedHomes} />
             </div>
@@ -583,6 +655,9 @@ export default function Dashboard() {
                 maxSavings={maxSavings}
                 psfByMarket={psfByMarket}
                 selectedSet={selectedCompare}
+                sortKey={sortKey}
+                sortDir={sortDir}
+                onSort={handleSort}
                 onToggleCompare={toggleCompare}
                 onUnlock={handleUnlock}
                 onRemove={handleRemove}
@@ -744,6 +819,18 @@ function BestDealCard({ home }) {
         </div>
         <ScoreGauge score={score} />
       </div>
+      <div className="bestDealSignals">
+        {r.days_on_market != null && (
+          <span className="bestDealSignal">
+            {r.days_on_market} days on market
+          </span>
+        )}
+        {r.price_cuts != null && r.price_cuts > 0 && (
+          <span className="bestDealSignal">
+            {r.price_cuts} price cut{r.price_cuts === 1 ? "" : "s"}
+          </span>
+        )}
+      </div>
       <Link href={`/dashboard/${encodeAddress(home.address)}`} className="answerLink">
         View report →
       </Link>
@@ -753,7 +840,7 @@ function BestDealCard({ home }) {
 
 /* ===================== CARD 2 — VALUE BREAKDOWN with race bars ===================== */
 
-function ValueBreakdownCard({ unlockedHomes, bestLiving, bestLot, bestLandPlay }) {
+function ValueBreakdownCard({ unlockedHomes, psfByMarket }) {
   if (unlockedHomes.length === 0) {
     return (
       <EmptyAnswerCard
@@ -763,20 +850,23 @@ function ValueBreakdownCard({ unlockedHomes, bestLiving, bestLot, bestLandPlay }
     );
   }
 
-  const livingPsf = Number(bestLiving?.report?.price_per_living_sqft);
-  const lotPsf = Number(bestLot?.report?.price_per_lot_sqft);
-  const landScore = Number(bestLandPlay?.report?.land_arbitrage_score);
+  const livingHomes = unlockedHomes
+    .filter((h) => Number(h.report?.price_per_living_sqft) > 0)
+    .map((h) => ({ ...h, _v: Number(h.report.price_per_living_sqft) }))
+    .sort((a, b) => a._v - b._v)
+    .slice(0, MAX_BARS_PER_CARD);
 
-  const hasLivingPsf = !isNaN(livingPsf) && livingPsf > 0;
-  const hasLotPsf = !isNaN(lotPsf) && lotPsf > 0;
-  const hasLandScore = !isNaN(landScore);
-  const hasAny = hasLivingPsf || hasLotPsf || hasLandScore;
+  const lotHomes = unlockedHomes
+    .filter((h) => Number(h.report?.price_per_lot_sqft) > 0)
+    .map((h) => ({ ...h, _v: Number(h.report.price_per_lot_sqft) }))
+    .sort((a, b) => a._v - b._v)
+    .slice(0, MAX_BARS_PER_CARD);
 
-  if (!hasAny) {
+  if (livingHomes.length === 0 && lotHomes.length === 0) {
     return (
       <AnswerCardShell kicker="Value Breakdown">
         <div className="answerEmpty">
-          $/sqft + land data appears once fresh reports include the new fields.
+          $/sqft data appears once fresh reports include the new fields.
         </div>
         <a href="#ranked-homes" className="answerLink valueFullLink">
           Full breakdown →
@@ -787,29 +877,22 @@ function ValueBreakdownCard({ unlockedHomes, bestLiving, bestLot, bestLandPlay }
 
   return (
     <AnswerCardShell kicker="Value Breakdown">
-      <div className="statRowList">
-        {hasLivingPsf && (
-          <StatRow
-            label="$/sqft living"
-            address={bestLiving.address}
-            value={`$${Math.round(livingPsf).toLocaleString()}`}
-          />
-        )}
-        {hasLotPsf && (
-          <StatRow
-            label="$/sqft lot"
-            address={bestLot.address}
-            value={`$${Math.round(lotPsf).toLocaleString()}`}
-          />
-        )}
-        {hasLandScore && (
-          <StatRow
-            label="Land play"
-            address={bestLandPlay.address}
-            value={landLabel(landScore)}
-          />
-        )}
-      </div>
+      {livingHomes.length > 0 && (
+        <ValueBarSection
+          label="$/sqft living"
+          homes={livingHomes}
+          psfKey="living"
+          psfByMarket={psfByMarket}
+        />
+      )}
+      {lotHomes.length > 0 && (
+        <ValueBarSection
+          label="$/sqft lot"
+          homes={lotHomes}
+          psfKey="lot"
+          psfByMarket={psfByMarket}
+        />
+      )}
       <a href="#ranked-homes" className="answerLink valueFullLink">
         Full breakdown →
       </a>
@@ -817,14 +900,49 @@ function ValueBreakdownCard({ unlockedHomes, bestLiving, bestLot, bestLandPlay }
   );
 }
 
-function StatRow({ label, address, value }) {
+// Per-home bar list mirroring Card 3 (True Monthly Cost) visually: each
+// row is address + horizontal bar + value. Bar fill width is scaled
+// against the home's submarket avg — parity = 50%, below-avg = wider
+// green, above-avg = shorter slate.
+function ValueBarSection({ label, homes, psfKey, psfByMarket }) {
   return (
-    <div className="statRowLine">
-      <span className="statRowLabel">{label}</span>
-      <span className="statRowDot">·</span>
-      <span className="statRowAddr">{shortAddress(address)}</span>
-      <span className="statRowDot">·</span>
-      <span className="statRowValue">{value}</span>
+    <div className="valueBarSection">
+      <div className="valueSectionLabel">{label}</div>
+      <div className="valueBarRows">
+        {homes.map((h) => {
+          const submarket = getMarketKey(h.report);
+          const entry = submarket && psfByMarket ? psfByMarket.get(submarket) : null;
+          const avg = entry ? entry[psfKey] : null;
+          let pct;
+          let below;
+          if (avg && avg > 0) {
+            const ratio = h._v / avg;
+            pct = Math.max(10, Math.min(100, Math.round(50 + (1 - ratio) * 50)));
+            below = h._v <= avg;
+          } else {
+            // No submarket benchmark — assume the cheapest is winning.
+            const min = homes[0]._v;
+            pct = Math.max(10, Math.round((min / h._v) * 100));
+            below = h.id === homes[0].id;
+          }
+          return (
+            <div key={h.id} className="monthlyRow">
+              <div className="monthlyMeta">
+                <span className="monthlyAddr">{shortAddress(h.address)}</span>
+                <span className="monthlyVal">
+                  ${Math.round(h._v).toLocaleString()}
+                </span>
+              </div>
+              <div className="monthlyBar">
+                <div
+                  className={`monthlyBarSeg ${below ? "valueSegBelow" : "valueSegAbove"}`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -1016,11 +1134,40 @@ function TrueMonthlyCostCard({ unlockedHomes }) {
 
 /* ===================== RANKED TABLE ===================== */
 
+function SortHeader({ label, sortKey, activeKey, dir, onSort, className }) {
+  if (!sortKey) {
+    return <th className={className}>{label}</th>;
+  }
+  const active = sortKey === activeKey;
+  return (
+    <th
+      className={`sortableTh ${active ? "sortableThActive" : ""} ${className || ""}`}
+      onClick={() => onSort(sortKey)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSort(sortKey);
+        }
+      }}
+    >
+      <span className="sortableLabel">{label}</span>
+      <span className="sortArrow" aria-hidden="true">
+        {active ? (dir === "asc" ? "▲" : "▼") : ""}
+      </span>
+    </th>
+  );
+}
+
 function RankedTable({
   ranked,
   maxSavings,
   psfByMarket,
   selectedSet,
+  sortKey,
+  sortDir,
+  onSort,
   onToggleCompare,
   onUnlock,
   onRemove,
@@ -1029,7 +1176,10 @@ function RankedTable({
   credits,
   unlimited,
 }) {
-  let unlockedRank = 0;
+  // Rank is position in the CURRENT sort order — only assigned to rows
+  // whose active sort value is non-null (locked / missing-data rows get
+  // a — instead of a number).
+  let rankCounter = 0;
   return (
     <div className="rankedWrap">
       <div className="rankedTableScroll">
@@ -1038,30 +1188,34 @@ function RankedTable({
             <tr>
               <th className="rankedColRank">#</th>
               <th className="rankedColProp">Property</th>
-              <th>Size</th>
-              <th>Asking</th>
-              <th>Offer range</th>
-              <th>Offer gap</th>
-              <th>$/sqft</th>
-              <th>$/lot</th>
-              <th>Score</th>
-              <th>Land</th>
-              <th>DOM</th>
-              <th>Monthly</th>
-              <th>Tax</th>
+              <SortHeader label="Asking"      sortKey="asking"      activeKey={sortKey} dir={sortDir} onSort={onSort} />
+              <SortHeader label="Offer range" sortKey="offer_range" activeKey={sortKey} dir={sortDir} onSort={onSort} />
+              <SortHeader label="Offer gap"   sortKey="offer_gap"   activeKey={sortKey} dir={sortDir} onSort={onSort} />
+              <SortHeader label="Home sqft"   sortKey="home_sqft"   activeKey={sortKey} dir={sortDir} onSort={onSort} />
+              <SortHeader label="Lot sqft"    sortKey="lot_sqft"    activeKey={sortKey} dir={sortDir} onSort={onSort} />
+              <SortHeader label="$/sqft"      sortKey="psf"         activeKey={sortKey} dir={sortDir} onSort={onSort} />
+              <SortHeader label="$/lot"       sortKey="lot_psf"     activeKey={sortKey} dir={sortDir} onSort={onSort} />
+              <SortHeader label="Score"       sortKey="score"       activeKey={sortKey} dir={sortDir} onSort={onSort} />
+              <SortHeader label="Land"        sortKey="land"        activeKey={sortKey} dir={sortDir} onSort={onSort} />
+              <SortHeader label="DOM"         sortKey="dom"         activeKey={sortKey} dir={sortDir} onSort={onSort} />
+              <SortHeader label="Monthly"     sortKey="monthly"     activeKey={sortKey} dir={sortDir} onSort={onSort} />
+              <th>⚠</th>
               <th className="rankedColDeal">Deal</th>
-              <th className="rankedColActions"></th>
+              <th className="rankedColCompare">Compare</th>
+              <th className="rankedColView"></th>
+              <th className="rankedColRemove"></th>
             </tr>
           </thead>
           <tbody>
             {ranked.map((h) => {
-              const unlocked = h.has_access && h.report;
-              if (unlocked && h.savings != null) unlockedRank += 1;
+              const sortVal = getSortValue(h, sortKey);
+              const hasRank = sortVal != null;
+              if (hasRank) rankCounter += 1;
               return (
                 <RankedRow
                   key={h.id}
                   home={h}
-                  rank={unlocked && h.savings != null ? unlockedRank : null}
+                  rank={hasRank ? rankCounter : null}
                   maxSavings={maxSavings}
                   psfByMarket={psfByMarket}
                   selected={selectedSet.has(h.id)}
@@ -1116,20 +1270,6 @@ function RankedRow({
         {submarket && <span className="rankBadge">{submarket}</span>}
       </td>
       <td>
-        {unlocked && r.sqft ? (
-          <div className="rankSize">
-            <div className="rankSizeMain">{Number(r.sqft).toLocaleString()} sqft</div>
-            {r.lot_size_sqft ? (
-              <div className="rankSizeLot">
-                {Number(r.lot_size_sqft).toLocaleString()} sqft lot
-              </div>
-            ) : null}
-          </div>
-        ) : (
-          <span className="dashMuted">—</span>
-        )}
-      </td>
-      <td>
         <span className="rankAsk">{r.asking_price ? formatMoneyFull(r.asking_price) : "—"}</span>
       </td>
       <td>
@@ -1151,6 +1291,20 @@ function RankedRow({
           </div>
         ) : (
           <span className="dashBlur">$XXX,XXX</span>
+        )}
+      </td>
+      <td>
+        {unlocked && r.sqft ? (
+          <span className="rankSizeMain">{Number(r.sqft).toLocaleString()}</span>
+        ) : (
+          <span className="dashMuted">—</span>
+        )}
+      </td>
+      <td>
+        {unlocked && r.lot_size_sqft ? (
+          <span className="rankSizeMain">{Number(r.lot_size_sqft).toLocaleString()}</span>
+        ) : (
+          <span className="dashMuted">—</span>
         )}
       </td>
       <td>
@@ -1208,9 +1362,16 @@ function RankedRow({
         )}
       </td>
       <td>
-        {unlocked && hasTaxRisk(r) ? (
-          <span className="taxFlagSmall" title="Projected post-sale taxes are more than 25% above current bill">⚠</span>
-        ) : null}
+        <span className="warnStack">
+          {unlocked && hasTaxRisk(r) && (
+            <span className="taxFlagSmall" title="Projected post-sale taxes are more than 25% above current bill">⚠</span>
+          )}
+          {unlocked && offerRangeFlagged(r) && (
+            <span className="verifyFlagSmall" title={offerRangeFlagNote(r)}>
+              ⚠ Verify
+            </span>
+          )}
+        </span>
       </td>
       <td className="rankedColDeal">
         {unlocked && home.savings ? (
@@ -1221,59 +1382,60 @@ function RankedRow({
           <span className="dashBlur">▬▬▬</span>
         )}
       </td>
-      <td className="rankedColActions">
-        {unlocked ? (
-          <div className="rankActionsBox">
-            <label className="rankCheckLabel" title="Add to comparison">
-              <input type="checkbox" checked={selected} onChange={onToggleCompare} className="rankCheck" />
-              <span className="rankCheckText">Compare</span>
-            </label>
-            <Link href={`/dashboard/${encodeAddress(home.address)}`} className="rankViewBtn">View →</Link>
-            <button type="button" className="rankRemoveBtn" onClick={onRemove} aria-label="Remove" title="Remove">×</button>
-          </div>
-        ) : analyzing ? (
-          <div className="rankActionsBox">
-            <span className="rankAnalyzingBadge" aria-live="polite" title="Claude is analyzing this listing — should complete within ~60s">
-              <span className="rankAnalyzingSpinner" />
-              Analyzing…
-            </span>
-            <button type="button" className="rankRemoveBtn" onClick={onRemove} aria-label="Remove" title="Remove">×</button>
-          </div>
-        ) : failedAnalysis ? (
-          <div className="rankActionsBox">
-            <button
-              type="button"
-              className="rankUnlockBtn rankUnlockBtnFailed"
-              onClick={onRetryAnalyze}
-              disabled={pending || !home.listing_url}
-              title={home.last_error ? `Analysis failed: ${home.last_error}` : "Retry analysis"}
-            >
-              ⚠ Retry analysis
-            </button>
-            <button type="button" className="rankRemoveBtn" onClick={onRemove} aria-label="Remove" title="Remove">×</button>
-          </div>
-        ) : !home.report_exists ? (
-          <div className="rankActionsBox">
-            <button
-              type="button"
-              className="rankUnlockBtn"
-              onClick={onRetryAnalyze}
-              disabled={pending || !home.listing_url}
-              title={!home.listing_url ? "Need a listing URL to re-run analysis" : "Re-run Claude analysis"}
-            >
-              Retry analysis
-            </button>
-            <button type="button" className="rankRemoveBtn" onClick={onRemove} aria-label="Remove" title="Remove">×</button>
-          </div>
-        ) : (
-          <div className="rankActionsBox">
-            <button type="button" className="rankUnlockBtn" onClick={onUnlock} disabled={pending}>
-              <LockIcon size={11} />
-              {pending ? "..." : unlockLabel(home, credits, unlimited)}
-            </button>
-            <button type="button" className="rankRemoveBtn" onClick={onRemove} aria-label="Remove" title="Remove">×</button>
-          </div>
+      <td className="rankedColCompare">
+        {unlocked && (
+          <label className="rankCheckLabel" title="Add to comparison">
+            <input type="checkbox" checked={selected} onChange={onToggleCompare} className="rankCheck" />
+          </label>
         )}
+      </td>
+      <td className="rankedColView">
+        {unlocked ? (
+          <Link href={`/dashboard/${encodeAddress(home.address)}`} className="rankViewBtn">
+            View →
+          </Link>
+        ) : analyzing ? (
+          <span className="rankAnalyzingBadge" aria-live="polite" title="Claude is analyzing this listing — should complete within ~60s">
+            <span className="rankAnalyzingSpinner" />
+            Analyzing…
+          </span>
+        ) : failedAnalysis ? (
+          <button
+            type="button"
+            className="rankUnlockBtn rankUnlockBtnFailed"
+            onClick={onRetryAnalyze}
+            disabled={pending || !home.listing_url}
+            title={home.last_error ? `Analysis failed: ${home.last_error}` : "Retry analysis"}
+          >
+            ⚠ Retry
+          </button>
+        ) : !home.report_exists ? (
+          <button
+            type="button"
+            className="rankUnlockBtn"
+            onClick={onRetryAnalyze}
+            disabled={pending || !home.listing_url}
+            title={!home.listing_url ? "Need a listing URL to re-run analysis" : "Re-run Claude analysis"}
+          >
+            Retry
+          </button>
+        ) : (
+          <button type="button" className="rankUnlockBtn" onClick={onUnlock} disabled={pending}>
+            <LockIcon size={11} />
+            {pending ? "..." : unlockLabel(home, credits, unlimited)}
+          </button>
+        )}
+      </td>
+      <td className="rankedColRemove">
+        <button
+          type="button"
+          className="rankRemoveBtn"
+          onClick={onRemove}
+          aria-label="Remove"
+          title="Remove"
+        >
+          ×
+        </button>
       </td>
     </tr>
   );

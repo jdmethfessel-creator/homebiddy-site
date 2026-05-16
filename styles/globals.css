@@ -2334,7 +2334,66 @@ input {
   margin-top: auto;
 }
 
-/* --- Stat row lines for the simplified Value Breakdown card --- */
+/* --- Value Breakdown bar sections (Card 3-style, vs-neighborhood-avg) --- */
+.valueBarSection + .valueBarSection { margin-top: 12px; }
+.valueSectionLabel {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--dash-muted);
+  margin-bottom: 6px;
+}
+.valueBarRows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.valueSegBelow {
+  background: linear-gradient(90deg, #15803D, #22C55E);
+}
+.valueSegAbove {
+  background: #94A3B8;
+}
+
+/* --- Best Deal signals row (DOM + price cuts under the gauge/stat row) --- */
+.bestDealSignals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--dash-muted);
+  line-height: 1.3;
+}
+.bestDealSignal {
+  font-weight: 500;
+}
+.bestDealSignal + .bestDealSignal::before {
+  content: "·";
+  margin-right: 12px;
+  margin-left: -8px;
+  color: var(--dash-border);
+}
+
+/* --- Verify flag in the ⚠ column for data-quality issues --- */
+.verifyFlagSmall {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: #FEF3C7;
+  color: #92400E;
+  border: 1px solid #FDE68A;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  cursor: help;
+}
+
+/* --- Stat row lines (legacy — kept harmless for any callers) --- */
 .statRowList {
   display: flex;
   flex-direction: column;
@@ -2563,6 +2622,26 @@ input {
   white-space: nowrap;
 }
 
+/* Sortable column headers — clickable, with directional arrow when active */
+.sortableTh {
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+}
+.sortableTh:hover { background: var(--dash-blue-800); }
+.sortableTh:focus { outline: 2px solid var(--dash-blue-300); outline-offset: -2px; }
+.sortableThActive {
+  background: var(--dash-blue-800);
+}
+.sortArrow {
+  display: inline-block;
+  width: 10px;
+  margin-left: 4px;
+  font-size: 9px;
+  color: #93C5FD;
+  vertical-align: middle;
+}
+
 .rankedTable tbody td {
   padding: 12px;
   border-bottom: 1px solid var(--dash-border);
@@ -2575,10 +2654,12 @@ input {
   background: var(--dash-blue-50);
 }
 
-.rankedColRank { width: 56px; }
-.rankedColProp { min-width: 320px; max-width: 360px; }
-.rankedColDeal { width: 110px; }
-.rankedColActions { width: 220px; }
+.rankedColRank { width: 48px; }
+.rankedColProp { min-width: 280px; max-width: 320px; }
+.rankedColDeal { width: 90px; }
+.rankedColCompare { width: 70px; text-align: center; }
+.rankedColView { width: 110px; }
+.rankedColRemove { width: 36px; text-align: center; }
 
 .rankedColProp .rankAddress {
   display: inline-block;
@@ -3131,9 +3212,27 @@ input {
 }
 .dashMuted { color: var(--dash-muted); }
 
-/* Table needs more headroom for the extra columns + wider address column.
-   With the new Size column we bump min-width again. */
-.rankedTable { min-width: 1480px; }
+/* Table needs more headroom for the 18-column layout. */
+.rankedTable { min-width: 1620px; }
+
+/* Stacked-warning column (⚠ Tax + ⚠ Verify) — show vertically when both
+   apply on the same row. */
+.warnStack {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+}
+
+/* Smaller compare checkbox — no label now that the column header carries it */
+.rankedColCompare .rankCheckLabel {
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+}
+.rankedColCompare .rankCheck {
+  margin: 0;
+}
 
 /* --- Hero empty state shown when user has no homes saved at all --- */
 .answerHero {
