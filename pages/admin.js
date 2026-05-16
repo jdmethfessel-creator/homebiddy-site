@@ -134,6 +134,13 @@ export default function Admin() {
                   Report saved for <strong>{result.address}</strong>.{" "}
                   <strong>{result.unlocked_count}</strong> user
                   {result.unlocked_count === 1 ? "" : "s"} unlocked.
+                  {result.typed_address && (
+                    <div style={{ marginTop: 6, fontSize: 12 }}>
+                      Note: stored canonical form differs from what you typed
+                      (“{result.typed_address}”). The canonical form is what
+                      saved-home addresses are matched against.
+                    </div>
+                  )}
                   {result.extracted_summary && (
                     <div style={{ marginTop: 6, fontSize: 12 }}>
                       Asking ${result.extracted_summary.asking?.toLocaleString()} · Offer{" "}

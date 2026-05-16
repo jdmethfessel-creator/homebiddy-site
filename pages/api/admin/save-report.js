@@ -27,7 +27,8 @@ export default async function handler(req, res) {
   if (!process.env.ANTHROPIC_API_KEY) {
     return res.status(500).json({ error: "ANTHROPIC_API_KEY not configured" });
   }
-  const address = normalizeAddress(rawAddress) || rawAddress.trim();
+  // Fallback if Claude can't extract — always run through the canonicalizer.
+  const typedAddress = normalizeAddress(rawAddress) || rawAddress.trim();
 
   // Parse the pasted report via Claude with structured tool output.
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -48,7 +49,7 @@ export default async function handler(req, res) {
       messages: [
         {
           role: "user",
-          content: `Address: ${address}\n\nReport text:\n\n${raw_report}`,
+          content: `Address hint (from admin form, may be in any format — re-normalize per the rules): ${typedAddress}\n\nReport text:\n\n${raw_report}`,
         },
       ],
     });
@@ -61,6 +62,12 @@ export default async function handler(req, res) {
     console.error("Anthropic parse error:", err);
     return res.status(502).json({ error: `Claude error: ${err.message}` });
   }
+
+  // Address: prefer Claude's extracted value (extracted from the report itself);
+  // always pass through normalizeAddress as a server-side safety net so the
+  // stored key exactly matches what URL-derived saves produce.
+  const claudeAddress = extracted.address ? normalizeAddress(extracted.address) : null;
+  const address = claudeAddress || typedAddress;
 
   // Build the row: column fields + jsonb data blob.
   const data = {
@@ -132,6 +139,7 @@ export default async function handler(req, res) {
   return res.status(200).json({
     success: true,
     address,
+    typed_address: typedAddress !== address ? typedAddress : undefined,
     unlocked_count: (accessCount || 0) + unlimitedGranted,
     extracted_summary: {
       asking: row.asking_price,
