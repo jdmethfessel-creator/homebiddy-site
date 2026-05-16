@@ -13,7 +13,19 @@ export const config = {
   maxDuration: 300,
 };
 
-// Insert saved_home tolerating schema-v6 columns being absent.
+// Wraps a Supabase error into a structured JSON response. The actual message
+// gets surfaced to the client so the user (and we, via the console) can see
+// exactly what failed — no more generic "Could not save home".
+function fail(res, status, code, message, detail) {
+  return res.status(status).json({
+    error: message,
+    code,
+    ...(detail ? { detail } : {}),
+  });
+}
+
+// Insert saved_home, retrying with only legacy fields if any v6 column is
+// missing. Returns { data, error } in the standard Supabase shape.
 async function insertSavedHome(supabase, fields) {
   let { data, error } = await supabase
     .from("saved_homes")
@@ -40,11 +52,40 @@ export default async function handler(req, res) {
   }
 
   const auth = await getUserFromRequest(req);
-  if (!auth) return res.status(401).json({ error: "Not authenticated" });
+  if (!auth) return fail(res, 401, "unauthenticated", "Sign in to save homes.");
 
   const { listing_url, address: providedAddress } = req.body || {};
   if (!listing_url && !providedAddress) {
-    return res.status(400).json({ error: "Missing listing_url or address" });
+    return fail(
+      res,
+      400,
+      "missing_input",
+      "Paste a Zillow or Realtor.com listing URL."
+    );
+  }
+
+  // Surface URL-shape problems early instead of silently failing address
+  // extraction further down.
+  if (listing_url && !providedAddress) {
+    try {
+      const u = new URL(listing_url);
+      const host = u.hostname.toLowerCase();
+      if (!/(zillow\.com|realtor\.com)$/i.test(host)) {
+        return res.status(400).json({
+          error:
+            "We can only auto-parse Zillow or Realtor.com URLs. Paste the address manually below.",
+          code: "unsupported_host",
+          needs_address: true,
+        });
+      }
+    } catch {
+      return res.status(400).json({
+        error:
+          "That doesn't look like a valid URL. Paste a Zillow/Realtor.com link or type the address.",
+        code: "invalid_url",
+        needs_address: true,
+      });
+    }
   }
 
   let address = providedAddress
@@ -53,20 +94,37 @@ export default async function handler(req, res) {
 
   if (!address) {
     return res.status(400).json({
-      error: "Could not parse the address. Please type it in.",
+      error:
+        "Couldn't extract the address from that URL — please type it in below.",
+      code: "needs_address",
       needs_address: true,
     });
   }
 
   const supabase = getSupabaseAdmin();
 
-  const { data: existingHome } = await supabase
+  // Schema-tolerant: select only id so this works regardless of v6 migration
+  // state. (Selecting v6 columns here would 400 the request on stale schemas
+  // and skip our existing-row check, forcing a duplicate insert later.)
+  const { data: existingHome, error: lookupErr } = await supabase
     .from("saved_homes")
-    .select("id, status")
+    .select("id")
     .eq("user_id", auth.user.id)
     .eq("address", address)
     .maybeSingle();
+  if (lookupErr) {
+    console.error("saved_homes lookup error:", lookupErr);
+    return fail(
+      res,
+      500,
+      "db_lookup",
+      `Database lookup failed: ${lookupErr.message}`,
+      lookupErr.code
+    );
+  }
 
+  // Check report cache (non-fatal if this query errors — we just won't
+  // auto-grant access).
   const { data: report } = await supabase
     .from("reports")
     .select("address")
@@ -90,19 +148,56 @@ export default async function handler(req, res) {
       }
     );
     if (insertErr) {
-      console.error("save_home insert error:", insertErr);
-      return res.status(500).json({ error: "Could not save home" });
+      // 23505 = unique violation. The most common cause: a concurrent
+      // duplicate save by the same user. Re-fetch the existing row and
+      // proceed gracefully instead of returning an error.
+      const isDup =
+        insertErr.code === "23505" ||
+        /duplicate key|already exists/i.test(insertErr.message || "");
+      if (isDup) {
+        const { data: refetch, error: refetchErr } = await supabase
+          .from("saved_homes")
+          .select("id")
+          .eq("user_id", auth.user.id)
+          .eq("address", address)
+          .maybeSingle();
+        if (refetch?.id) {
+          homeId = refetch.id;
+        } else {
+          console.error("dup insert + refetch failed:", insertErr, refetchErr);
+          return fail(
+            res,
+            409,
+            "duplicate",
+            "This home is already saved but we couldn't find it. Refresh the page and try again."
+          );
+        }
+      } else {
+        console.error("save_home insert error:", insertErr);
+        return fail(
+          res,
+          500,
+          "db_insert",
+          `Couldn't save home: ${insertErr.message}`,
+          insertErr.code || null
+        );
+      }
+    } else {
+      homeId = inserted.id;
     }
-    homeId = inserted.id;
   } else if (!reportExists) {
     // Re-saving an address that still has no report — flip it back to pending
-    // so the polling UI shows analysis is running.
+    // so the polling UI lights up again. Tolerate v6 columns missing.
     const { error: statusErr } = await supabase
       .from("saved_homes")
       .update({ status: "pending", analysis_attempts: 0, last_error: null })
       .eq("id", homeId);
-    if (statusErr && !/column .* does not exist/i.test(statusErr.message || "")) {
+    if (
+      statusErr &&
+      !/column .* does not exist/i.test(statusErr.message || "")
+    ) {
       console.error("status reset error:", statusErr);
+      // Non-fatal — the home is saved and analysis will retry on next attempt.
     }
   }
 
@@ -123,9 +218,6 @@ export default async function handler(req, res) {
     else console.error("auto-grant access error:", grantErr);
   }
 
-  // Respond immediately. The Claude pipeline below runs in the background
-  // via waitUntil — the user sees status='pending' on the dashboard and
-  // the client polls /api/dashboard/list every 10s for completion.
   res.status(200).json({
     id: homeId,
     address,
