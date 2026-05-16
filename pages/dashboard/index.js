@@ -157,6 +157,13 @@ export default function Dashboard() {
   const [selectedCompare, setSelectedCompare] = useState(() => new Set());
   const [compareLimitMessage, setCompareLimitMessage] = useState(false);
   const [analyzingSet, setAnalyzingSet] = useState(() => new Set());
+  // Optimistic-delete state. We hide the home immediately, commit to the
+  // server after a delay, and let the user undo within the window. Native
+  // confirm() was unreliable: browsers suppress repeated dialogs and the
+  // suppressed call returns false, silently blocking every subsequent
+  // delete.
+  const [pendingRemoval, setPendingRemoval] = useState(null);
+  const [hiddenHomeIds, setHiddenHomeIds] = useState(() => new Set());
 
   useEffect(() => {
     const sb = getSupabaseClient();
@@ -231,16 +238,79 @@ export default function Dashboard() {
     });
   }, [homes]);
 
-  async function handleRemove(id) {
-    if (!token) return;
-    if (!confirm("Remove this home from your saved list?")) return;
-    await fetch("/api/dashboard/remove", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ id }),
-    });
+  async function commitRemove(id) {
+    if (!token || !id) return;
+    try {
+      await fetch("/api/dashboard/remove", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ id }),
+      });
+    } catch (err) {
+      console.error("remove failed:", err);
+    }
     loadAll(token);
   }
+
+  function handleRemove(id) {
+    if (!token || !id) return;
+    const home = homes.find((h) => h.id === id);
+    if (!home) return;
+
+    // If there's already a pending removal, commit it now — the user has
+    // moved on, so the previous undo window closes.
+    if (pendingRemoval) {
+      clearTimeout(pendingRemoval.timer);
+      // Fire-and-forget — the response just refreshes state which we'll
+      // also do after the new removal commits.
+      commitRemove(pendingRemoval.id);
+    }
+
+    // Hide the row immediately for a snappy click; drop any compare slot
+    // it was occupying.
+    setHiddenHomeIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+    setSelectedCompare((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+
+    const timer = setTimeout(() => {
+      setPendingRemoval(null);
+      setHiddenHomeIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      commitRemove(id);
+    }, 5000);
+
+    setPendingRemoval({ id, address: home.address, timer });
+  }
+
+  function undoRemove() {
+    if (!pendingRemoval) return;
+    clearTimeout(pendingRemoval.timer);
+    setHiddenHomeIds((prev) => {
+      const next = new Set(prev);
+      next.delete(pendingRemoval.id);
+      return next;
+    });
+    setPendingRemoval(null);
+  }
+
+  // Clear any pending removal timer if the component unmounts so we don't
+  // try to setState on an unmounted tree.
+  useEffect(() => {
+    return () => {
+      if (pendingRemoval?.timer) clearTimeout(pendingRemoval.timer);
+    };
+  }, [pendingRemoval]);
 
   async function handleUnlock(home) {
     if (!token) return;
@@ -333,22 +403,28 @@ export default function Dashboard() {
     }
   }
 
-  const unlockedHomes = useMemo(() => homes.filter((h) => h.has_access && h.report), [homes]);
+  // Visible-to-the-user view of homes — strips anything optimistically
+  // hidden by a pending undo.
+  const visibleHomes = useMemo(
+    () => homes.filter((h) => !hiddenHomeIds.has(h.id)),
+    [homes, hiddenHomeIds]
+  );
+  const unlockedHomes = useMemo(() => visibleHomes.filter((h) => h.has_access && h.report), [visibleHomes]);
   const bestNeg = useMemo(() => pickBestNegotiabilityHome(unlockedHomes), [unlockedHomes]);
   const bestLivingPsf = useMemo(() => pickLowest(unlockedHomes, "price_per_living_sqft"), [unlockedHomes]);
   const bestLotPsf = useMemo(() => pickLowest(unlockedHomes, "price_per_lot_sqft"), [unlockedHomes]);
   const condAdjusted = useMemo(() => pickConditionAdjustedHome(unlockedHomes), [unlockedHomes]);
   const totalSavings = useMemo(() => computeTotalSavings(unlockedHomes), [unlockedHomes]);
   const marketCondition = useMemo(() => aggregateMarketConditions(markets), [markets]);
-  const primaryCity = useMemo(() => pickPrimaryCity(homes), [homes]);
-  const ranked = useMemo(() => rankByArbitrage(homes), [homes]);
+  const primaryCity = useMemo(() => pickPrimaryCity(visibleHomes), [visibleHomes]);
+  const ranked = useMemo(() => rankByArbitrage(visibleHomes), [visibleHomes]);
   const maxSavings = useMemo(
     () => ranked.reduce((m, h) => (h.savings && h.savings > m ? h.savings : m), 0),
     [ranked]
   );
   const psfByMarket = useMemo(() => submarketPsfMap(markets), [markets]);
 
-  const upsell = !plan.is_unlimited ? pickUpsell(homes.length) : null;
+  const upsell = !plan.is_unlimited ? pickUpsell(visibleHomes.length) : null;
   const comparing = useMemo(
     () => ranked.filter((h) => selectedCompare.has(h.id) && h.has_access && h.report),
     [ranked, selectedCompare]
@@ -370,11 +446,11 @@ export default function Dashboard() {
         <main className="dashMain">
           <div className="dashTopBar">
             <div className="dashTopBarText">
-              {homes.length === 0 ? (
+              {visibleHomes.length === 0 ? (
                 "Start by adding a Zillow or Realtor.com listing."
               ) : (
                 <>
-                  <strong>{homes.length}</strong> home{homes.length === 1 ? "" : "s"} saved
+                  <strong>{visibleHomes.length}</strong> home{visibleHomes.length === 1 ? "" : "s"} saved
                   {planLabel ? <> · <strong>{planLabel}</strong></> : null}
                   {primaryCity ? <> · <strong>{primaryCity}</strong></> : null}
                 </>
@@ -400,7 +476,7 @@ export default function Dashboard() {
             </div>
           )}
 
-          {homes.length === 0 ? (
+          {visibleHomes.length === 0 ? (
             <div className="answerHero">
               <div className="answerHeroKicker">Get started</div>
               <h2 className="answerHeroTitle">
@@ -480,6 +556,21 @@ export default function Dashboard() {
 
           {markets.length > 0 && <MarketIntelligenceSection markets={markets} />}
         </main>
+
+        {pendingRemoval && (
+          <div className="undoToast" role="status" aria-live="polite">
+            <span className="undoToastText">
+              Removed <strong>{shortAddress(pendingRemoval.address)}</strong>
+            </span>
+            <button
+              type="button"
+              className="undoToastBtn"
+              onClick={undoRemove}
+            >
+              Undo
+            </button>
+          </div>
+        )}
       </div>
 
       {showAdd && (

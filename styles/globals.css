@@ -2687,6 +2687,50 @@ input {
   display: inline-block;
 }
 
+/* --- Undo toast for optimistic-delete on home rows --- */
+.undoToast {
+  position: fixed;
+  left: 50%;
+  bottom: 32px;
+  transform: translateX(-50%);
+  z-index: 200;
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  background: var(--dash-blue-900);
+  color: #fff;
+  padding: 10px 14px 10px 18px;
+  border-radius: 12px;
+  box-shadow: 0 14px 38px rgba(10, 37, 64, 0.28);
+  font-size: 13.5px;
+  max-width: 92vw;
+  animation: undoToastIn 0.22s ease;
+}
+@keyframes undoToastIn {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+.undoToastText {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 60vw;
+}
+.undoToastText strong { color: #fff; font-weight: 600; }
+.undoToastBtn {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.undoToastBtn:hover { background: rgba(255, 255, 255, 0.22); }
+
 /* ============================================================================
    v5: gauge, value breakdown race bars, monthly cost breakdown, tax flag
    ============================================================================ */
