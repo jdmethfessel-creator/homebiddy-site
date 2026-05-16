@@ -164,9 +164,9 @@ export default function Home() {
             Stop guessing. <em>Bid&nbsp;with&nbsp;proof.</em>
           </h1>
           <p className="heroSub">
-            Paste any Zillow or Realtor.com link. We analyze actual closed sales,
-            market dynamics and nearby comps to tell you exactly what to offer
-            and why. Backed by real data, not gut feeling.
+            Paste any Zillow or Realtor.com link. We analyze closed sales,
+            listing data, market dynamics and nearby comps to tell you exactly
+            what to offer and why. Backed by real data, not gut feeling.
           </p>
 
           <form className="formCard" onSubmit={handleSubmit} noValidate>
