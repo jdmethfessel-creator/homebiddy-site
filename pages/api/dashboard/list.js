@@ -1,34 +1,10 @@
 import { getUserFromRequest } from "../../../lib/auth-server";
 import { getSupabaseAdmin } from "../../../lib/supabase-server";
 
-const REPORT_FIELDS = [
-  "address",
-  "asking_price",
-  "offer_low",
-  "offer_high",
-  "negotiability_score",
-  "days_on_market",
-  "price_cuts",
-  "zestimate_gap",
-  "neighborhood",
-  "appreciation_rate_annual",
-  "beds",
-  "baths",
-  "sqft",
-  "lot_size_sqft",
-  "price_per_living_sqft",
-  "price_per_lot_sqft",
-  "last_sold_price",
-  "last_sold_year",
-  "tax_assessed_value",
-  "annual_taxes_current",
-  "annual_taxes_projected",
-  "hoa_monthly",
-  "flood_zone",
-  "estimated_monthly_mortgage",
-  "estimated_monthly_insurance",
-  "estimated_monthly_total",
-].join(",");
+// Use `*` so the SELECT tolerates schema migrations being half-applied —
+// we return whatever columns currently exist and the dashboard handles
+// missing fields gracefully.
+const REPORT_FIELDS = "*";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {

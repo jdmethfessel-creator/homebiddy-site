@@ -114,9 +114,31 @@ export default async function handler(req, res) {
   };
 
   const supabase = getSupabaseAdmin();
-  const { error: upsertErr } = await supabase
+  let { error: upsertErr } = await supabase
     .from("reports")
     .upsert(row, { onConflict: "address" });
+  // If v4 columns haven't been migrated yet, postgres returns
+  // 'column "..." does not exist'. Strip the v4 fields and retry so
+  // the admin can still publish a report — they'll just lack cost data.
+  if (upsertErr && /column .* does not exist/i.test(upsertErr.message || "")) {
+    console.warn(
+      "schema-v4 columns missing — retrying upsert with legacy fields only:",
+      upsertErr.message
+    );
+    const legacy = {};
+    for (const k of [
+      "address", "asking_price", "offer_low", "offer_high",
+      "negotiability_score", "days_on_market", "price_cuts",
+      "zestimate_gap", "neighborhood", "appreciation_rate_annual",
+      "beds", "baths", "sqft", "data",
+    ]) {
+      if (row[k] !== undefined) legacy[k] = row[k];
+    }
+    const retry = await supabase
+      .from("reports")
+      .upsert(legacy, { onConflict: "address" });
+    upsertErr = retry.error;
+  }
   if (upsertErr) {
     console.error("reports upsert:", upsertErr);
     return res.status(500).json({ error: `DB error: ${upsertErr.message}` });

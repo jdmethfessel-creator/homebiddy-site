@@ -5,8 +5,8 @@ import {
   getMarketKey,
 } from "../../../lib/market-intel";
 
-const FIELDS =
-  "address, neighborhood, asking_price, offer_low, days_on_market, price_cuts, appreciation_rate_annual, sqft, price_per_living_sqft";
+// `*` lets the aggregator tolerate v4 columns existing or not.
+const FIELDS = "*";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {

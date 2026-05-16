@@ -366,17 +366,38 @@ export default function Dashboard() {
             </div>
           )}
 
-          <div className="answerGrid">
-            <BestDealCard home={bestNeg} />
-            <ValueBreakdownCard
-              unlockedHomes={unlockedHomes}
-              bestLiving={bestLivingPsf}
-              bestLot={bestLotPsf}
-              conditionAdjusted={condAdjusted}
-              psfByMarket={psfByMarket}
-            />
-            <TrueMonthlyCostCard unlockedHomes={unlockedHomes} />
-          </div>
+          {homes.length === 0 ? (
+            <div className="answerHero">
+              <div className="answerHeroKicker">Get started</div>
+              <h2 className="answerHeroTitle">
+                Add a listing URL to unlock full analysis.
+              </h2>
+              <p className="answerHeroSub">
+                Paste any Zillow or Realtor.com link. We&rsquo;ll surface your
+                best deal, value breakdown, and true monthly cost across every
+                home you save.
+              </p>
+              <button
+                type="button"
+                className="dashAddBtn"
+                onClick={() => setShowAdd(true)}
+              >
+                + Add home
+              </button>
+            </div>
+          ) : (
+            <div className="answerGrid">
+              <BestDealCard home={bestNeg} />
+              <ValueBreakdownCard
+                unlockedHomes={unlockedHomes}
+                bestLiving={bestLivingPsf}
+                bestLot={bestLotPsf}
+                conditionAdjusted={condAdjusted}
+                psfByMarket={psfByMarket}
+              />
+              <TrueMonthlyCostCard unlockedHomes={unlockedHomes} />
+            </div>
+          )}
 
           {upsell && (
             <UpsellBanner upsell={upsell} onClick={() => startPlanCheckout(upsell.plan)} />
@@ -504,7 +525,7 @@ function BestDealCard({ home }) {
     return (
       <EmptyAnswerCard
         kicker="Your Best Deal"
-        message="Unlock a report to surface your strongest negotiation opportunity."
+        message="Once a saved home has an unlocked report, your strongest opportunity surfaces here."
       />
     );
   }
@@ -551,24 +572,89 @@ function ValueBreakdownCard({ unlockedHomes, bestLiving, bestLot, conditionAdjus
       />
     );
   }
+
+  // If no home has any PSF data (older reports pre-schema-v4), show a
+  // graceful fallback that surfaces what we DO have instead of an empty
+  // card.
+  const hasLivingPsf = unlockedHomes.some(
+    (h) => h.report?.price_per_living_sqft != null
+  );
+  const hasLotPsf = unlockedHomes.some(
+    (h) => h.report?.price_per_lot_sqft != null
+  );
+
+  if (!hasLivingPsf && !hasLotPsf) {
+    // Show offer-vs-asking gap fallback so the card still informs.
+    const sorted = [...unlockedHomes]
+      .filter(
+        (h) => h.report?.asking_price && h.report?.offer_low
+      )
+      .map((h) => ({
+        ...h,
+        _gap:
+          ((h.report.asking_price - h.report.offer_low) /
+            h.report.asking_price) *
+          100,
+      }))
+      .sort((a, b) => b._gap - a._gap)
+      .slice(0, MAX_BARS_PER_CARD);
+    const max = sorted[0]?._gap || 1;
+    return (
+      <AnswerCardShell kicker="Value Breakdown">
+        <div className="valueRow">
+          <div className="valueRowHeader">
+            <div className="valueRowLabel">Biggest gap under asking</div>
+            <div className="valueRowSub">$/sqft data pending</div>
+          </div>
+          <div className="valueBars">
+            {sorted.map((h, i) => {
+              const pct = Math.max(8, Math.round((h._gap / max) * 100));
+              return (
+                <div key={h.id} className="valueBarRow">
+                  <div className="valueBarLabel">
+                    <span className="valueBarPsf">{h._gap.toFixed(1)}%</span>
+                    <span className="valueBarAddr">{shortAddress(h.address)}</span>
+                  </div>
+                  <div className="valueRaceBar">
+                    <div
+                      className={`valueRaceFill${i === 0 ? " valueRaceFillWin" : ""}`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="valueMarketRef">
+            Refresh reports to add $/sqft living + lot comparisons.
+          </div>
+        </div>
+      </AnswerCardShell>
+    );
+  }
+
   return (
     <AnswerCardShell kicker="Value Breakdown">
-      <ValueMetricRow
-        label="Best $/sqft living"
-        sublabel="Most space for your money"
-        winner={bestLiving}
-        field="price_per_living_sqft"
-        unlockedHomes={unlockedHomes}
-        psfByMarket={psfByMarket}
-      />
-      <ValueMetricRow
-        label="Best $/sqft lot"
-        sublabel="Best land value"
-        winner={bestLot}
-        field="price_per_lot_sqft"
-        unlockedHomes={unlockedHomes}
-        psfByMarket={null}
-      />
+      {hasLivingPsf && (
+        <ValueMetricRow
+          label="Best $/sqft living"
+          sublabel="Most space for your money"
+          winner={bestLiving}
+          field="price_per_living_sqft"
+          unlockedHomes={unlockedHomes}
+          psfByMarket={psfByMarket}
+        />
+      )}
+      {hasLotPsf && (
+        <ValueMetricRow
+          label="Best $/sqft lot"
+          sublabel="Best land value"
+          winner={bestLot}
+          field="price_per_lot_sqft"
+          unlockedHomes={unlockedHomes}
+          psfByMarket={null}
+        />
+      )}
       {conditionAdjusted && (
         <div className="answerSubline valueAdjusted">
           <strong>Condition-adjusted:</strong> {shortAddress(conditionAdjusted.address)} may offer
@@ -643,12 +729,76 @@ function TrueMonthlyCostCard({ unlockedHomes }) {
     .filter((h) => h.report?.estimated_monthly_total != null)
     .map((h) => ({ ...h, _m: Number(h.report.estimated_monthly_total) }))
     .sort((a, b) => a._m - b._m);
+
+  // Fallback for pre-schema-v4 reports: show offer range across the list
+  // so the card still answers a useful question.
   if (homesWithTotal.length === 0) {
+    if (unlockedHomes.length === 0) {
+      return (
+        <EmptyAnswerCard
+          kicker="True Monthly Cost"
+          message="Unlock reports to see fully-loaded monthly carry estimates."
+        />
+      );
+    }
+    const homesWithOffer = unlockedHomes
+      .filter((h) => h.report?.offer_low && h.report?.offer_high)
+      .map((h) => ({
+        ...h,
+        _lo: Number(h.report.offer_low),
+        _hi: Number(h.report.offer_high),
+      }))
+      .sort((a, b) => a._lo - b._lo);
+    if (homesWithOffer.length === 0) {
+      return (
+        <EmptyAnswerCard
+          kicker="True Monthly Cost"
+          message="Monthly cost estimates appear after fresh reports include tax + insurance data."
+        />
+      );
+    }
+    const min = homesWithOffer[0]._lo;
+    const max = homesWithOffer[homesWithOffer.length - 1]._hi;
     return (
-      <EmptyAnswerCard
-        kicker="True Monthly Cost"
-        message="Unlock reports to see fully-loaded monthly carry estimates."
-      />
+      <AnswerCardShell kicker="True Monthly Cost">
+        <div className="answerSubline" style={{ marginBottom: 4 }}>
+          Offer range across your list
+        </div>
+        <div className="answerBigStat">
+          {formatMoney(min)} – {formatMoney(max)}
+        </div>
+        <div className="monthlyBars">
+          {homesWithOffer.slice(0, MAX_BARS_PER_CARD).map((h) => {
+            const range = Math.max(1, max - min);
+            const t = (h._lo - min) / range;
+            const pct = Math.max(8, Math.round(t * 90 + 10));
+            const fillClass =
+              t < 0.34
+                ? "monthlyFillLow"
+                : t < 0.67
+                ? "monthlyFillMid"
+                : "monthlyFillHigh";
+            return (
+              <div key={h.id} className="monthlyRow">
+                <div className="monthlyMeta">
+                  <span className="monthlyAddr">{shortAddress(h.address)}</span>
+                  <span className="monthlyVal">{formatMoney(h._lo)}</span>
+                </div>
+                <div className="monthlyBar">
+                  <div
+                    className={`monthlyBarFill ${fillClass}`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div className="answerSubline">
+          Mortgage + tax + insurance estimates will appear once reports
+          include those fields. Re-generate to populate.
+        </div>
+      </AnswerCardShell>
     );
   }
   const min = homesWithTotal[0]._m;
