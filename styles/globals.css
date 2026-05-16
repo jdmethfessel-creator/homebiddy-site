@@ -2879,6 +2879,86 @@ input {
   display: inline-block;
 }
 
+/* ============================================================================
+   Hover tooltip — portal-rendered so it escapes the ranked table's overflow
+   ============================================================================ */
+.hoverTrigger {
+  cursor: help;
+}
+
+.hoverTooltipBubble {
+  position: fixed;
+  z-index: 9999;
+  width: 240px;
+  background: var(--dash-blue-900);
+  color: #fff;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-family: "DM Sans", sans-serif;
+  font-size: 11.5px;
+  line-height: 1.5;
+  letter-spacing: 0;
+  text-transform: none;
+  box-shadow: 0 10px 28px rgba(10, 37, 64, 0.3);
+  pointer-events: none;
+  transform: translate(-50%, calc(-100% - 10px));
+  animation: hoverTooltipIn 0.12s ease;
+}
+
+@keyframes hoverTooltipIn {
+  from { opacity: 0; transform: translate(-50%, calc(-100% - 4px)); }
+  to   { opacity: 1; transform: translate(-50%, calc(-100% - 10px)); }
+}
+
+.hoverTooltipTitle {
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 6px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  font-size: 10.5px;
+}
+
+.hoverTooltipLead {
+  color: rgba(255, 255, 255, 0.88);
+  margin-bottom: 6px;
+}
+
+.hoverTooltipList {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.hoverTooltipList li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+}
+.hoverTooltipList li span {
+  color: rgba(255, 255, 255, 0.78);
+}
+.hoverTooltipList li strong {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 700;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+.hoverTooltipNote {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+  color: rgba(219, 234, 254, 0.92);
+  font-style: italic;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 /* Retry button on rows where analysis failed all retries */
 .rankUnlockBtnFailed {
   background: #FEF3C7;

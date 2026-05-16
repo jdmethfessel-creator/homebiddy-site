@@ -1,7 +1,8 @@
 import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import DashboardHeader from "../../components/DashboardHeader";
 import { getSupabaseClient } from "../../lib/supabase-client";
 import { formatMoney, formatMoneyFull } from "../../lib/scoring";
@@ -44,6 +45,17 @@ function formatScore(n) {
   return Number.isInteger(v) ? String(v) : v.toFixed(1);
 }
 
+// Same formatter, but clamped to [1, 10] before display. Used for the
+// final negotiability_score and land_arbitrage_score so any legacy row
+// in the DB with a sub-1 value (pre-clamp era) still renders sensibly.
+// Sub-component scores in the tooltip keep using formatScore directly
+// since 0 is a legitimate value for an individual component.
+function formatFinalScore(n) {
+  if (n == null || isNaN(Number(n))) return "—";
+  const v = Math.max(1, Math.min(10, Number(n)));
+  return Number.isInteger(v) ? String(v) : v.toFixed(1);
+}
+
 // Map a 0-10 land_arbitrage_score to a word label for Card 2.
 function landLabel(score) {
   if (score == null || isNaN(Number(score))) return "—";
@@ -59,6 +71,115 @@ function LockIcon({ size = 12 }) {
       <rect x="3" y="11" width="18" height="11" rx="2" />
       <path d="M7 11V7a5 5 0 0 1 10 0v4" />
     </svg>
+  );
+}
+
+// Hover tooltip rendered via a React portal so the bubble can escape the
+// table's overflow-clipped scroll container. Positioned above the trigger
+// with a fixed-position bubble anchored to the trigger's bounding rect.
+function HoverTooltip({ children, title, body }) {
+  const [show, setShow] = useState(false);
+  const [pos, setPos] = useState({ left: 0, top: 0 });
+  const triggerRef = useRef(null);
+
+  function showAt() {
+    if (typeof window === "undefined" || !triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    setPos({
+      left: rect.left + rect.width / 2,
+      top: rect.top,
+    });
+    setShow(true);
+  }
+  function hide() { setShow(false); }
+
+  const hasContent = title || body;
+
+  return (
+    <>
+      <span
+        ref={triggerRef}
+        className={hasContent ? "hoverTrigger" : ""}
+        onMouseEnter={hasContent ? showAt : undefined}
+        onMouseLeave={hasContent ? hide : undefined}
+        onFocus={hasContent ? showAt : undefined}
+        onBlur={hasContent ? hide : undefined}
+      >
+        {children}
+      </span>
+      {show && hasContent && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              className="hoverTooltipBubble"
+              style={{ left: `${pos.left}px`, top: `${pos.top}px` }}
+            >
+              {title && <div className="hoverTooltipTitle">{title}</div>}
+              {body}
+            </div>,
+            document.body
+          )
+        : null}
+    </>
+  );
+}
+
+function ScoreTooltipBody({ breakdown, score }) {
+  return (
+    <div>
+      <div className="hoverTooltipLead">
+        Negotiability is how much room you have to negotiate (1–10). It&rsquo;s
+        a weighted average of four signals.
+      </div>
+      {breakdown && typeof breakdown === "object" ? (
+        <ul className="hoverTooltipList">
+          {breakdown.dom_score != null && (
+            <li>
+              <span>Days on market</span>
+              <strong>{formatScore(breakdown.dom_score)}/10</strong>
+            </li>
+          )}
+          {breakdown.price_cut_score != null && (
+            <li>
+              <span>Price cuts</span>
+              <strong>{formatScore(breakdown.price_cut_score)}/10</strong>
+            </li>
+          )}
+          {breakdown.zestimate_gap_score != null && (
+            <li>
+              <span>Zestimate gap</span>
+              <strong>{formatScore(breakdown.zestimate_gap_score)}/10</strong>
+            </li>
+          )}
+          {breakdown.price_per_sqft_score != null && (
+            <li>
+              <span>$/sqft vs comps</span>
+              <strong>{formatScore(breakdown.price_per_sqft_score)}/10</strong>
+            </li>
+          )}
+        </ul>
+      ) : (
+        <div className="hoverTooltipNote">
+          Sub-component breakdown isn&rsquo;t available for this report.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LandTooltipBody({ notes }) {
+  return (
+    <div>
+      <div className="hoverTooltipLead">
+        Land arbitrage scores the property as a land play (1–10): lot value
+        per sqft vs the neighborhood, lot size vs median, structure condition,
+        and renovation / ADU upside.
+      </div>
+      {notes ? (
+        <div className="hoverTooltipNote">{notes}</div>
+      ) : (
+        <div className="hoverTooltipNote">No specific notes for this property.</div>
+      )}
+    </div>
   );
 }
 
@@ -782,7 +903,7 @@ function ScoreGauge({ score }) {
         fontWeight="700"
         fill="#0A2540"
       >
-        {formatScore(v)}
+        {formatFinalScore(v)}
       </text>
     </svg>
   );
@@ -1345,26 +1466,35 @@ function RankedRow({
       </td>
       <td>
         {unlocked ? (
-          <span
-            className="rankScore"
-            title={breakdownTooltip(r.score_breakdown, r.negotiability_score)}
+          <HoverTooltip
+            title="Negotiability score"
+            body={
+              <ScoreTooltipBody
+                breakdown={r.score_breakdown}
+                score={r.negotiability_score}
+              />
+            }
           >
-            <span className={`scoreDot scoreDot_${dot}`} />
-            {formatScore(r.negotiability_score)}
-          </span>
+            <span className="rankScore">
+              <span className={`scoreDot scoreDot_${dot}`} />
+              {formatFinalScore(r.negotiability_score)}
+            </span>
+          </HoverTooltip>
         ) : (
           <span className="dashBlur">X</span>
         )}
       </td>
       <td>
         {unlocked && r.land_arbitrage_score != null ? (
-          <span
-            className="rankScore"
-            title={r.land_arbitrage_notes || `Land arbitrage score ${formatScore(r.land_arbitrage_score)}/10`}
+          <HoverTooltip
+            title="Land arbitrage"
+            body={<LandTooltipBody notes={r.land_arbitrage_notes} />}
           >
-            <span className={`scoreDot scoreDot_${landDotColor(r.land_arbitrage_score)}`} />
-            {formatScore(r.land_arbitrage_score)}
-          </span>
+            <span className="rankScore">
+              <span className={`scoreDot scoreDot_${landDotColor(r.land_arbitrage_score)}`} />
+              {formatFinalScore(r.land_arbitrage_score)}
+            </span>
+          </HoverTooltip>
         ) : (
           <span className="dashMuted">—</span>
         )}
@@ -1599,7 +1729,7 @@ function InlineCompare({ comparing, onRemove, onClear }) {
               cells={comparing.map((h) => `${formatMoney(h.report.offer_low)}–${formatMoney(h.report.offer_high)}`)}
               accent
             />
-            <CompareRow label="Negotiability" cells={comparing.map((h) => `${formatScore(h.report.negotiability_score)} / 10`)} />
+            <CompareRow label="Negotiability" cells={comparing.map((h) => `${formatFinalScore(h.report.negotiability_score)} / 10`)} />
             <CompareRow
               label="Land Arbitrage"
               cells={comparing.map((h) => {
@@ -1607,7 +1737,7 @@ function InlineCompare({ comparing, onRemove, onClear }) {
                 if (s == null) return "—";
                 return (
                   <div key={h.id}>
-                    <div>{formatScore(s)} / 10</div>
+                    <div>{formatFinalScore(s)} / 10</div>
                     {h.report.land_arbitrage_notes && (
                       <div className="compareLandNotes">
                         {h.report.land_arbitrage_notes}
