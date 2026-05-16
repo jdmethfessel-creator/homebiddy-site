@@ -183,7 +183,6 @@ export default function Dashboard() {
   const [pendingAddress, setPendingAddress] = useState(null);
   const [selectedCompare, setSelectedCompare] = useState(() => new Set());
   const [compareLimitMessage, setCompareLimitMessage] = useState(false);
-  const [analyzingSet, setAnalyzingSet] = useState(() => new Set());
   // Optimistic-delete state. We hide the home immediately, commit to the
   // server after a delay, and let the user undo within the window. Native
   // confirm() was unreliable: browsers suppress repeated dialogs and the
@@ -234,6 +233,20 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => { if (token) loadAll(token); }, [token, loadAll]);
+
+  // Poll the list endpoint every 10s while any home is still pending Claude
+  // analysis. Stops automatically once nothing is in-flight. The save and
+  // analyze endpoints return immediately and run analysis in the background
+  // via waitUntil — this is how the UI picks up completion.
+  useEffect(() => {
+    if (!token) return;
+    const hasPending = homes.some((h) => h.status === "pending");
+    if (!hasPending) return;
+    const interval = setInterval(() => {
+      loadAll(token);
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [homes, token, loadAll]);
 
   useEffect(() => {
     if (!router.isReady) return;
@@ -397,16 +410,11 @@ export default function Dashboard() {
 
   function clearCompare() { setSelectedCompare(new Set()); }
 
-  // Run the Claude web-search analysis on a freshly-saved home. Adds the
-  // home to the analyzing set so the row shows a loading badge until the
-  // analysis returns and the list refreshes.
+  // Trigger /api/dashboard/analyze (used by the Retry button on failed
+  // rows). The endpoint flips status='pending' and kicks off analysis via
+  // waitUntil; the polling effect above picks up completion.
   async function triggerAnalyze(homeId, address, listing_url) {
-    if (!token || !homeId || !address || !listing_url) return;
-    setAnalyzingSet((prev) => {
-      const next = new Set(prev);
-      next.add(homeId);
-      return next;
-    });
+    if (!token || !homeId || !address) return;
     try {
       await fetch("/api/dashboard/analyze", {
         method: "POST",
@@ -417,17 +425,9 @@ export default function Dashboard() {
         body: JSON.stringify({ address, listing_url }),
       });
     } catch (err) {
-      console.error("analyze failed:", err);
-    } finally {
-      setAnalyzingSet((prev) => {
-        const next = new Set(prev);
-        next.delete(homeId);
-        return next;
-      });
-      // Refresh regardless — Claude may have completed even if the
-      // connection dropped, since the function runs to completion server-side.
-      loadAll(token);
+      console.error("analyze trigger failed:", err);
     }
+    loadAll(token);
   }
 
   // Visible-to-the-user view of homes — strips anything optimistically
@@ -558,7 +558,6 @@ export default function Dashboard() {
               maxSavings={maxSavings}
               psfByMarket={psfByMarket}
               selectedSet={selectedCompare}
-              analyzingSet={analyzingSet}
               onToggleCompare={toggleCompare}
               onUnlock={handleUnlock}
               onRemove={handleRemove}
@@ -606,19 +605,12 @@ export default function Dashboard() {
         <AddHomeModal
           token={token}
           onClose={() => setShowAdd(false)}
-          onSaved={(saveResponse) => {
+          onSaved={() => {
+            // save.js already kicks off background analysis via waitUntil
+            // and sets status='pending'. The polling effect above will
+            // refresh the list every 10s until status flips to 'complete'.
             setShowAdd(false);
             loadAll(token);
-            // If the saved address doesn't have a report yet, immediately
-            // kick off the Claude web-search analysis. The row will show
-            // an "Analyzing..." badge until the analysis completes.
-            if (saveResponse?.analyzing && saveResponse.id && saveResponse.listing_url) {
-              triggerAnalyze(
-                saveResponse.id,
-                saveResponse.address,
-                saveResponse.listing_url
-              );
-            }
           }}
         />
       )}
@@ -1164,7 +1156,6 @@ function RankedTable({
   maxSavings,
   psfByMarket,
   selectedSet,
-  analyzingSet,
   onToggleCompare,
   onUnlock,
   onRemove,
@@ -1208,11 +1199,12 @@ function RankedTable({
                   maxSavings={maxSavings}
                   psfByMarket={psfByMarket}
                   selected={selectedSet.has(h.id)}
-                  analyzing={analyzingSet?.has(h.id)}
                   onToggleCompare={() => onToggleCompare(h.id)}
                   onUnlock={() => onUnlock(h)}
                   onRemove={() => onRemove(h.id)}
-                  onRetryAnalyze={() => onRetryAnalyze && onRetryAnalyze(h.id, h.address, h.listing_url)}
+                  onRetryAnalyze={() =>
+                    onRetryAnalyze && onRetryAnalyze(h.id, h.address, h.listing_url)
+                  }
                   pending={pendingAddress === h.address}
                   credits={credits}
                   unlimited={unlimited}
@@ -1228,9 +1220,11 @@ function RankedTable({
 
 function RankedRow({
   home, rank, maxSavings, psfByMarket,
-  selected, analyzing, onToggleCompare, onUnlock, onRemove, onRetryAnalyze,
+  selected, onToggleCompare, onUnlock, onRemove, onRetryAnalyze,
   pending, credits, unlimited,
 }) {
+  const analyzing = home.status === "pending";
+  const failedAnalysis = home.status === "failed";
   const r = home.report || {};
   const unlocked = home.has_access && home.report;
   const submarket = getMarketKey(r);
@@ -1359,10 +1353,23 @@ function RankedRow({
           </div>
         ) : analyzing ? (
           <div className="rankActionsBox">
-            <span className="rankAnalyzingBadge" aria-live="polite">
+            <span className="rankAnalyzingBadge" aria-live="polite" title="Claude is analyzing this listing — should complete within ~60s">
               <span className="rankAnalyzingSpinner" />
               Analyzing…
             </span>
+            <button type="button" className="rankRemoveBtn" onClick={onRemove} aria-label="Remove" title="Remove">×</button>
+          </div>
+        ) : failedAnalysis ? (
+          <div className="rankActionsBox">
+            <button
+              type="button"
+              className="rankUnlockBtn rankUnlockBtnFailed"
+              onClick={onRetryAnalyze}
+              disabled={pending || !home.listing_url}
+              title={home.last_error ? `Analysis failed: ${home.last_error}` : "Retry analysis"}
+            >
+              ⚠ Retry analysis
+            </button>
             <button type="button" className="rankRemoveBtn" onClick={onRemove} aria-label="Remove" title="Remove">×</button>
           </div>
         ) : !home.report_exists ? (

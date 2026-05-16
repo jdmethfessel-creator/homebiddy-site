@@ -2687,6 +2687,14 @@ input {
   display: inline-block;
 }
 
+/* Retry button on rows where analysis failed all retries */
+.rankUnlockBtnFailed {
+  background: #FEF3C7;
+  color: #92400E;
+  border: 1px solid #FDE68A;
+}
+.rankUnlockBtnFailed:hover { background: #FDE68A; }
+
 /* --- Undo toast for optimistic-delete on home rows --- */
 .undoToast {
   position: fixed;

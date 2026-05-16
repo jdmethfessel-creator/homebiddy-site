@@ -17,9 +17,11 @@ export default async function handler(req, res) {
 
   const supabase = getSupabaseAdmin();
 
+  // SELECT * so v6 status columns flow through if migrated; legacy fields
+  // come through either way.
   const { data: homes, error: homesErr } = await supabase
     .from("saved_homes")
-    .select("id, address, listing_url, created_at")
+    .select("*")
     .eq("user_id", auth.user.id)
     .order("created_at", { ascending: false });
   if (homesErr) {
@@ -63,6 +65,9 @@ export default async function handler(req, res) {
       address: h.address,
       listing_url: h.listing_url,
       created_at: h.created_at,
+      status: h.status || "complete",
+      analysis_attempts: h.analysis_attempts ?? 0,
+      last_error: h.last_error || null,
       report_exists: !!report,
       has_access: hasAccess,
       report: hasAccess ? report : report ? maskedSummary(report) : null,
