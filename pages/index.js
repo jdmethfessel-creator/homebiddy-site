@@ -1,5 +1,7 @@
 import Head from "next/head";
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { getSupabaseClient } from "../lib/supabase-client";
 
 const STEPS = [
   "Fetching listing data…",
@@ -103,7 +105,27 @@ export default function Home() {
   const [showPricing, setShowPricing] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(null);
   const [returnNotice, setReturnNotice] = useState(null); // "paid" | "canceled" | null
+  // null = still checking (don't render to avoid Sign-in → Dashboard flicker)
+  const [signedIn, setSignedIn] = useState(null);
   const timeouts = useRef([]);
+
+  // Check auth status on mount so the nav can show 'Dashboard →' for
+  // signed-in users vs. 'Sign in / Sign up' for everyone else. Subscribe
+  // to changes so the nav updates if the user signs in via another tab.
+  useEffect(() => {
+    const sb = getSupabaseClient();
+    if (!sb) {
+      setSignedIn(false);
+      return;
+    }
+    sb.auth.getSession().then(({ data }) => {
+      setSignedIn(!!data?.session);
+    });
+    const { data: sub } = sb.auth.onAuthStateChange((_evt, session) => {
+      setSignedIn(!!session);
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
 
   // Handle return from Stripe Checkout
   useEffect(() => {
