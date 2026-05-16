@@ -11,10 +11,12 @@ import {
   isPaidUser,
 } from "../../../lib/plans";
 
-// 5-minute ceiling on the function's total lifetime — waitUntil keeps the
-// runtime alive after the response is sent, up to maxDuration.
+// Function lifetime ceiling. waitUntil keeps the runtime alive after the
+// response is sent, up to maxDuration. 800s requires Vercel Pro + Fluid
+// Compute (default for new projects; toggle under Project Settings →
+// Functions if it isn't already on).
 export const config = {
-  maxDuration: 300,
+  maxDuration: 800,
 };
 
 // Wraps a Supabase error into a structured JSON response. The actual message

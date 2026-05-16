@@ -5,9 +5,11 @@ import { normalizeAddress } from "../../../lib/extract-address";
 import { runAnalysisForHome } from "../../../lib/dashboard-analyze";
 
 // Same lifetime ceiling as /api/dashboard/save — waitUntil keeps the
-// function alive for the background analysis up to maxDuration.
+// function alive for the background analysis up to maxDuration. 800s
+// requires Fluid Compute (default on Pro, toggle under Project Settings
+// → Functions if needed).
 export const config = {
-  maxDuration: 300,
+  maxDuration: 800,
 };
 
 export default async function handler(req, res) {

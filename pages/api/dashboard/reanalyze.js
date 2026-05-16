@@ -10,7 +10,7 @@ import { runAnalysisForHome } from "../../../lib/dashboard-analyze";
 // access row is re-created by runAnalysisForHome's grantAccess() once the
 // fresh report is in place.
 export const config = {
-  maxDuration: 300,
+  maxDuration: 800,
 };
 
 export default async function handler(req, res) {
