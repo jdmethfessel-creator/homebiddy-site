@@ -81,6 +81,7 @@ insert into public.reports (
   annual_taxes_current, annual_taxes_projected, hoa_monthly,
   flood_zone, estimated_monthly_mortgage, estimated_monthly_insurance,
   estimated_monthly_total,
+  land_arbitrage_score, land_arbitrage_notes, score_breakdown,
   data
 ) values (
   '442 28th St, West Palm Beach FL 33407',
@@ -92,6 +93,14 @@ insert into public.reports (
   13775, 17575, 0,
   'X', 9278, 1038,
   11781,
+  7.4,
+  'Solid 7,500 sqft lot at $266/sqft (~10% below Old Northwood median) with a 1989 structure showing 136 DOM and two cuts — meaningful land-value play with renovation upside.',
+  jsonb_build_object(
+    'dom_score', 9,
+    'price_cut_score', 8,
+    'zestimate_gap_score', 8,
+    'price_per_sqft_score', 7
+  ),
   jsonb_build_object(
     'insights', jsonb_build_array(
       'Closed comps say $1.78M-$1.85M. Five nearby 4-bed sales in the last 6 months landed at $682-$720/sqft - this listing is priced at $764/sqft, roughly 9% above the comp band.',

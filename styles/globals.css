@@ -2812,12 +2812,28 @@ input {
 }
 .valueRaceFill {
   height: 100%;
-  background: #BBF7D0;
   border-radius: 3px;
   transition: width 0.35s ease;
 }
+/* Below the neighborhood average = better value: full saturated green */
+.valueRaceFillBelow {
+  background: linear-gradient(90deg, #15803D, #22C55E);
+}
+/* Above the neighborhood average = worse value: lighter, slate-leaning */
+.valueRaceFillAbove {
+  background: #CBD5E1;
+}
+/* Legacy class — kept for any callers that still pass it */
 .valueRaceFillWin {
   background: linear-gradient(90deg, #15803D, #22C55E);
+}
+
+.valueLandNotes {
+  margin-top: 8px;
+  font-size: 11.5px;
+  color: var(--dash-muted);
+  font-style: italic;
+  line-height: 1.45;
 }
 
 .valueMarketRef {
@@ -2877,25 +2893,53 @@ input {
   font-variant-numeric: tabular-nums;
 }
 .monthlyBar {
-  height: 6px;
+  height: 10px;
   background: var(--dash-blue-50);
-  border-radius: 3px;
+  border-radius: 4px;
   overflow: hidden;
+  display: flex;
+  align-items: stretch;
 }
-.monthlyBarFill {
+.monthlyBarSeg {
   height: 100%;
-  border-radius: 3px;
   transition: width 0.35s ease;
 }
-.monthlyFillLow {
-  background: linear-gradient(90deg, #15803D, #22C55E);
+.monthlySegMortgage { background: #0A2540; }
+.monthlySegTax      { background: #F59E0B; }
+.monthlySegIns      { background: #4682B4; }
+.monthlySegHoa      { background: #94A3B8; }
+
+/* Legacy classes kept so any stale callers don't break */
+.monthlyBarFill { height: 100%; border-radius: 3px; transition: width 0.35s ease; }
+.monthlyFillLow  { background: linear-gradient(90deg, #15803D, #22C55E); }
+.monthlyFillMid  { background: linear-gradient(90deg, #92400E, #F59E0B); }
+.monthlyFillHigh { background: linear-gradient(90deg, #991B1B, #DC2626); }
+
+.monthlyLegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  margin-top: 4px;
+  margin-bottom: 8px;
 }
-.monthlyFillMid {
-  background: linear-gradient(90deg, #92400E, #F59E0B);
+.monthlyLegendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--dash-muted);
+  font-weight: 500;
 }
-.monthlyFillHigh {
-  background: linear-gradient(90deg, #991B1B, #DC2626);
+.monthlyLegendSwatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
 }
+.swatchMortgage { background: #0A2540; }
+.swatchTax      { background: #F59E0B; }
+.swatchIns      { background: #4682B4; }
+.swatchHoa      { background: #94A3B8; }
 
 /* --- Tax reassessment flag --- */
 .taxFlag {
@@ -2932,6 +2976,48 @@ input {
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
+
+/* --- Offer Gap cell: % primary, $ secondary muted --- */
+.rankGap {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  line-height: 1.1;
+}
+.rankGapPct {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 700;
+  font-size: 14px;
+  color: #15803D;
+  font-variant-numeric: tabular-nums;
+}
+.rankGapDollar {
+  font-size: 11px;
+  color: var(--dash-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Best Deal hero: offer gap dollar subline under the % big stat --- */
+.offerGapSubMoney {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--dash-muted);
+  margin-top: 2px;
+  letter-spacing: -0.005em;
+}
+
+/* --- Land Arbitrage row in inline compare --- */
+.compareLandNotes {
+  font-family: "DM Sans", sans-serif;
+  font-size: 11px;
+  color: var(--dash-muted);
+  font-style: italic;
+  font-weight: 400;
+  margin-top: 4px;
+  line-height: 1.4;
+  white-space: normal;
+}
 .psfArrow {
   font-size: 9px;
   margin-left: 4px;
@@ -2946,8 +3032,9 @@ input {
 }
 .dashMuted { color: var(--dash-muted); }
 
-/* Table needs more headroom for the extra columns + wider address column */
-.rankedTable { min-width: 1320px; }
+/* Table needs more headroom for the extra columns + wider address column.
+   With the new Land column we bump min-width again. */
+.rankedTable { min-width: 1400px; }
 
 /* --- Hero empty state shown when user has no homes saved at all --- */
 .answerHero {
