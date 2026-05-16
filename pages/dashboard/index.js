@@ -1579,6 +1579,8 @@ function RankedTable({
               <SortHeader label="Asking"      sortKey="asking"        activeKey={sortKey} dir={sortDir} onSort={onSort} />
               <SortHeader label="Offer range" sortKey="offer_range"   activeKey={sortKey} dir={sortDir} onSort={onSort} className="rankedColOfferRange" />
               <SortHeader label="Gap %"       sortKey="offer_gap_pct" activeKey={sortKey} dir={sortDir} onSort={onSort} className="rankedColGapPct" />
+              <SortHeader label="Home sqft"   sortKey="home_sqft"     activeKey={sortKey} dir={sortDir} onSort={onSort} />
+              <SortHeader label="Lot sqft"    sortKey="lot_sqft"      activeKey={sortKey} dir={sortDir} onSort={onSort} />
               <SortHeader label="$/sqft"      sortKey="psf"           activeKey={sortKey} dir={sortDir} onSort={onSort} />
               <SortHeader label="$/lot"       sortKey="lot_psf"       activeKey={sortKey} dir={sortDir} onSort={onSort} />
               <SortHeader
@@ -1598,6 +1600,7 @@ function RankedTable({
                 dir={sortDir}
                 onSort={onSort}
               />
+              <SortHeader label="Land"        sortKey="land"          activeKey={sortKey} dir={sortDir} onSort={onSort} />
               <SortHeader label="DOM"         sortKey="dom"           activeKey={sortKey} dir={sortDir} onSort={onSort} />
               <SortHeader label="Monthly"     sortKey="monthly"       activeKey={sortKey} dir={sortDir} onSort={onSort} />
               <th className="rankedColDeal">Deal</th>
@@ -1754,6 +1757,20 @@ function RankedRow({
         )}
       </td>
       <td>
+        {unlocked && r.sqft ? (
+          <span className="rankSizeMain">{Number(r.sqft).toLocaleString()}</span>
+        ) : (
+          <span className="dashMuted">—</span>
+        )}
+      </td>
+      <td>
+        {unlocked && r.lot_size_sqft ? (
+          <span className="rankSizeMain">{Number(r.lot_size_sqft).toLocaleString()}</span>
+        ) : (
+          <span className="dashMuted">—</span>
+        )}
+      </td>
+      <td>
         {unlocked && psf ? (
           <span className="rankPsf">
             ${Math.round(psf).toLocaleString()}
@@ -1784,6 +1801,21 @@ function RankedRow({
           </HoverTooltip>
         ) : (
           <span className="dashBlur">X</span>
+        )}
+      </td>
+      <td>
+        {unlocked && r.land_arbitrage_score != null ? (
+          <HoverTooltip
+            title="Land arbitrage"
+            body={<LandTooltipBody />}
+          >
+            <span className="rankScore">
+              <span className={`scoreDot scoreDot_${landDotColor(r.land_arbitrage_score)}`} />
+              {formatFinalScore(r.land_arbitrage_score)}
+            </span>
+          </HoverTooltip>
+        ) : (
+          <span className="dashMuted">—</span>
         )}
       </td>
       <td>
