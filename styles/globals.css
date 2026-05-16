@@ -2603,23 +2603,19 @@ input {
 }
 .bestDealNextStepLink:hover { color: var(--dash-blue-700); }
 
-/* Price-change line in the Property cell — green ↓ for cuts, red ↑ for raises. */
-.rankPropPriceChange {
-  margin-top: 2px;
-  font-size: 11px;
+/* Price History column — directional ↓/↑ with amount + month. */
+.rankedColPriceHistory {
+  min-width: 140px;
+  white-space: nowrap;
+}
+.rankPriceChange {
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
 }
 .priceChangeCut { color: #15803D; }
 .priceChangeUp  { color: #B91C1C; }
-
-/* "Analysis updated" stamp in the Property cell. */
-.rankPropUpdated {
-  margin-top: 2px;
-  font-size: 11px;
-  color: var(--dash-muted);
-  letter-spacing: 0.02em;
-}
 
 /* Refresh button in its own table column. */
 .rankedColRefresh { width: 36px; text-align: center; }

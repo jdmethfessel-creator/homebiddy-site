@@ -1575,6 +1575,7 @@ function RankedTable({
               <th className="rankedColRank">#</th>
               <th className="rankedColProp">Property</th>
               <th className="rankedColNeighborhood">Neighborhood</th>
+              <th className="rankedColPriceHistory">Price history</th>
               <SortHeader label="Asking"      sortKey="asking"        activeKey={sortKey} dir={sortDir} onSort={onSort} />
               <SortHeader label="Offer range" sortKey="offer_range"   activeKey={sortKey} dir={sortDir} onSort={onSort} className="rankedColOfferRange" />
               <SortHeader label="Gap %"       sortKey="offer_gap_pct" activeKey={sortKey} dir={sortDir} onSort={onSort} className="rankedColGapPct" />
@@ -1636,9 +1637,6 @@ function RankedTable({
           </tbody>
         </table>
       </div>
-      <p className="rankedScoreLegend">
-        Negotiability scores reflect DOM, price history, comp gap, and listing signals. 7+ = strong leverage. 4–6 = moderate. Below 4 = limited room.
-      </p>
     </div>
   );
 }
@@ -1666,6 +1664,7 @@ function RankedRow({
   }
   const ceilingRisk = unlocked && hasCeilingRisk(r);
   const ceilingFloorPct = ceilingRisk ? ceilingEstFloorPct(r) : null;
+  const priceChange = unlocked ? parseLatestPriceChange(r) : null;
   // Deal bar tracks negotiability score directly: 9.0 → 90% width, 4.6 → 46%.
   const negScore = unlocked ? Number(r.negotiability_score) : null;
   const dealPct =
@@ -1693,7 +1692,11 @@ function RankedRow({
               target="_blank"
               rel="noopener noreferrer"
               className="rankListingLink"
-              title="Open original listing in a new tab"
+              title={
+                unlocked && r.generated_at
+                  ? `Open original listing · analysis updated ${formatShortDate(r.generated_at)}`
+                  : "Open original listing in a new tab"
+              }
               aria-label="Open original listing"
               onClick={(e) => e.stopPropagation()}
             >
@@ -1701,35 +1704,22 @@ function RankedRow({
             </a>
           )}
         </div>
-        {(() => {
-          const change = unlocked ? parseLatestPriceChange(r) : null;
-          if (change && change.delta !== 0) {
-            const isCut = change.delta < 0;
-            return (
-              <div
-                className={`rankPropPriceChange ${isCut ? "priceChangeCut" : "priceChangeUp"}`}
-                title={`${formatMoney(change.oldPrice)} → ${formatMoney(change.newPrice)}`}
-              >
-                {isCut ? "↓" : "↑"} {isCut ? "cut" : "raised"} {formatShortDollars(change.delta)} {change.when}
-              </div>
-            );
-          }
-          if (home.created_at) {
-            return (
-              <div className="rankPropSaved">Saved {savedAgo(home.created_at)}</div>
-            );
-          }
-          return null;
-        })()}
-        {unlocked && r.generated_at && (
-          <div className="rankPropUpdated">
-            Analysis updated {formatShortDate(r.generated_at)}
-          </div>
-        )}
       </td>
       <td className="rankedColNeighborhood">
         {submarket ? (
           <span className="rankNeighborhood">{submarket}</span>
+        ) : (
+          <span className="dashMuted">—</span>
+        )}
+      </td>
+      <td className="rankedColPriceHistory">
+        {priceChange && priceChange.delta !== 0 ? (
+          <span
+            className={`rankPriceChange ${priceChange.delta < 0 ? "priceChangeCut" : "priceChangeUp"}`}
+            title={`${formatMoney(priceChange.oldPrice)} → ${formatMoney(priceChange.newPrice)}`}
+          >
+            {priceChange.delta < 0 ? "↓" : "↑"} {priceChange.delta < 0 ? "cut" : "raised"} {formatShortDollars(priceChange.delta)} {priceChange.when}
+          </span>
         ) : (
           <span className="dashMuted">—</span>
         )}
