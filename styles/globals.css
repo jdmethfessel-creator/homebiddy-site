@@ -2643,7 +2643,10 @@ input {
 }
 
 .rankedTable tbody td {
-  padding: 12px;
+  /* Tighter rows now that the Property cell is a single-line address —
+     padding shrinks to 8px vertical (was 12px) for a more compact,
+     Bloomberg-row feel. */
+  padding: 8px 12px;
   border-bottom: 1px solid var(--dash-border);
   color: var(--dash-ink);
   vertical-align: middle;
@@ -2655,16 +2658,29 @@ input {
 }
 
 .rankedColRank { width: 48px; }
-.rankedColProp { min-width: 280px; max-width: 320px; }
+.rankedColProp { min-width: 240px; max-width: 300px; }
+.rankedColNeighborhood { min-width: 130px; max-width: 180px; }
+.rankedColOfferRange { min-width: 160px; }
+.rankedColGapPct { min-width: 70px; text-align: right; }
+.rankedColGapDollar { min-width: 80px; text-align: right; }
 .rankedColDeal { width: 90px; }
 .rankedColCompare { width: 70px; text-align: center; }
 .rankedColView { width: 110px; }
 .rankedColRemove { width: 36px; text-align: center; }
 
+/* Right-align the SORT label + arrow on the gap columns so the header
+   visually matches the right-aligned numeric cells underneath. */
+.rankedColGapPct.sortableTh,
+.rankedColGapDollar.sortableTh {
+  text-align: right;
+}
+
 .rankedColProp .rankAddress {
   display: inline-block;
   max-width: 100%;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   line-height: 1.3;
 }
 
@@ -2717,7 +2733,11 @@ input {
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
-.rankOffer { color: var(--dash-blue-700); font-weight: 600; }
+.rankOffer {
+  color: var(--dash-blue-700);
+  font-weight: 600;
+  white-space: nowrap;
+}
 .rankSavings {
   font-family: "Fraunces", Georgia, serif;
   font-weight: 700;
@@ -3157,25 +3177,45 @@ input {
   font-variant-numeric: tabular-nums;
 }
 
-/* --- Offer Gap cell: % primary, $ secondary muted --- */
-.rankGap {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  line-height: 1.1;
-}
-.rankGapPct {
+/* --- Gap % / Gap $ as separate cells (split layout) --- */
+.rankGapPctSolo {
   font-family: "Fraunces", Georgia, serif;
   font-weight: 700;
   font-size: 14px;
   color: #15803D;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
-.rankGapDollar {
-  font-size: 11px;
-  color: var(--dash-muted);
+.rankGapDollarSolo {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--dash-ink);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
+
+/* --- Neighborhood pill in its own column --- */
+.rankNeighborhood {
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--dash-blue-700);
+  background: var(--dash-blue-50);
+  border: 1px solid var(--dash-blue-200);
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* Legacy classes — kept so any other callers don't break */
+.rankGap { display: flex; flex-direction: column; gap: 1px; line-height: 1.1; }
+.rankGapPct { font-family: "Fraunces", Georgia, serif; font-weight: 700; font-size: 14px; color: #15803D; font-variant-numeric: tabular-nums; }
+.rankGapDollar { font-size: 11px; color: var(--dash-muted); font-variant-numeric: tabular-nums; }
 
 /* --- Best Deal hero: offer gap dollar subline under the % big stat --- */
 .offerGapSubMoney {
@@ -3212,8 +3252,8 @@ input {
 }
 .dashMuted { color: var(--dash-muted); }
 
-/* Table needs more headroom for the 18-column layout. */
-.rankedTable { min-width: 1620px; }
+/* Table now carries 20 columns (Neighborhood + split Gap). */
+.rankedTable { min-width: 1820px; }
 
 /* Stacked-warning column (⚠ Tax + ⚠ Verify) — show vertically when both
    apply on the same row. */

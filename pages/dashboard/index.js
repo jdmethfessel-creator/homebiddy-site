@@ -91,6 +91,12 @@ function getSortValue(home, key) {
     case "asking": return numOrNull(r.asking_price);
     case "offer_range": return numOrNull(r.offer_low);
     case "offer_gap": return home.savings;
+    case "offer_gap_pct": {
+      const asking = numOrNull(r.asking_price);
+      const gap = home.savings;
+      if (asking == null || gap == null || asking === 0) return null;
+      return (gap / asking) * 100;
+    }
     case "home_sqft": return numOrNull(r.sqft);
     case "lot_sqft": return numOrNull(r.lot_size_sqft);
     case "psf": return numOrNull(r.price_per_living_sqft);
@@ -1188,17 +1194,19 @@ function RankedTable({
             <tr>
               <th className="rankedColRank">#</th>
               <th className="rankedColProp">Property</th>
-              <SortHeader label="Asking"      sortKey="asking"      activeKey={sortKey} dir={sortDir} onSort={onSort} />
-              <SortHeader label="Offer range" sortKey="offer_range" activeKey={sortKey} dir={sortDir} onSort={onSort} />
-              <SortHeader label="Offer gap"   sortKey="offer_gap"   activeKey={sortKey} dir={sortDir} onSort={onSort} />
-              <SortHeader label="Home sqft"   sortKey="home_sqft"   activeKey={sortKey} dir={sortDir} onSort={onSort} />
-              <SortHeader label="Lot sqft"    sortKey="lot_sqft"    activeKey={sortKey} dir={sortDir} onSort={onSort} />
-              <SortHeader label="$/sqft"      sortKey="psf"         activeKey={sortKey} dir={sortDir} onSort={onSort} />
-              <SortHeader label="$/lot"       sortKey="lot_psf"     activeKey={sortKey} dir={sortDir} onSort={onSort} />
-              <SortHeader label="Score"       sortKey="score"       activeKey={sortKey} dir={sortDir} onSort={onSort} />
-              <SortHeader label="Land"        sortKey="land"        activeKey={sortKey} dir={sortDir} onSort={onSort} />
-              <SortHeader label="DOM"         sortKey="dom"         activeKey={sortKey} dir={sortDir} onSort={onSort} />
-              <SortHeader label="Monthly"     sortKey="monthly"     activeKey={sortKey} dir={sortDir} onSort={onSort} />
+              <th className="rankedColNeighborhood">Neighborhood</th>
+              <SortHeader label="Asking"      sortKey="asking"        activeKey={sortKey} dir={sortDir} onSort={onSort} />
+              <SortHeader label="Offer range" sortKey="offer_range"   activeKey={sortKey} dir={sortDir} onSort={onSort} className="rankedColOfferRange" />
+              <SortHeader label="Gap %"       sortKey="offer_gap_pct" activeKey={sortKey} dir={sortDir} onSort={onSort} className="rankedColGapPct" />
+              <SortHeader label="Gap $"       sortKey="offer_gap"     activeKey={sortKey} dir={sortDir} onSort={onSort} className="rankedColGapDollar" />
+              <SortHeader label="Home sqft"   sortKey="home_sqft"     activeKey={sortKey} dir={sortDir} onSort={onSort} />
+              <SortHeader label="Lot sqft"    sortKey="lot_sqft"      activeKey={sortKey} dir={sortDir} onSort={onSort} />
+              <SortHeader label="$/sqft"      sortKey="psf"           activeKey={sortKey} dir={sortDir} onSort={onSort} />
+              <SortHeader label="$/lot"       sortKey="lot_psf"       activeKey={sortKey} dir={sortDir} onSort={onSort} />
+              <SortHeader label="Score"       sortKey="score"         activeKey={sortKey} dir={sortDir} onSort={onSort} />
+              <SortHeader label="Land"        sortKey="land"          activeKey={sortKey} dir={sortDir} onSort={onSort} />
+              <SortHeader label="DOM"         sortKey="dom"           activeKey={sortKey} dir={sortDir} onSort={onSort} />
+              <SortHeader label="Monthly"     sortKey="monthly"       activeKey={sortKey} dir={sortDir} onSort={onSort} />
               <th>⚠</th>
               <th className="rankedColDeal">Deal</th>
               <th className="rankedColCompare">Compare</th>
@@ -1267,12 +1275,18 @@ function RankedRow({
         <Link href={`/dashboard/${encodeAddress(home.address)}`} className="rankAddress">
           {home.address}
         </Link>
-        {submarket && <span className="rankBadge">{submarket}</span>}
+      </td>
+      <td className="rankedColNeighborhood">
+        {submarket ? (
+          <span className="rankNeighborhood">{submarket}</span>
+        ) : (
+          <span className="dashMuted">—</span>
+        )}
       </td>
       <td>
         <span className="rankAsk">{r.asking_price ? formatMoneyFull(r.asking_price) : "—"}</span>
       </td>
-      <td>
+      <td className="rankedColOfferRange">
         {unlocked ? (
           <span className="rankOffer">
             {formatMoney(r.offer_low)}–{formatMoney(r.offer_high)}
@@ -1281,16 +1295,20 @@ function RankedRow({
           <span className="dashBlur">$X,XXX,XXX</span>
         )}
       </td>
-      <td>
+      <td className="rankedColGapPct">
         {unlocked && home.savings != null && r.asking_price ? (
-          <div className="rankGap">
-            <div className="rankGapPct">
-              {((home.savings / r.asking_price) * 100).toFixed(1)}%
-            </div>
-            <div className="rankGapDollar">{formatMoney(home.savings)}</div>
-          </div>
+          <span className="rankGapPctSolo">
+            {((home.savings / r.asking_price) * 100).toFixed(1)}%
+          </span>
         ) : (
-          <span className="dashBlur">$XXX,XXX</span>
+          <span className="dashBlur">XX%</span>
+        )}
+      </td>
+      <td className="rankedColGapDollar">
+        {unlocked && home.savings != null ? (
+          <span className="rankGapDollarSolo">{formatMoney(home.savings)}</span>
+        ) : (
+          <span className="dashBlur">$XXK</span>
         )}
       </td>
       <td>
