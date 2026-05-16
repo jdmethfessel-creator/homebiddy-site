@@ -6,11 +6,36 @@ import DashboardHeader from "../../components/DashboardHeader";
 import { getSupabaseClient } from "../../lib/supabase-client";
 import { scoreReport, formatMoney, formatMoneyFull } from "../../lib/scoring";
 
+// Reserved URL segments that should bounce back to /dashboard rather than be
+// treated as a property address. /dashboard/compare used to be a real page;
+// keep it bookmarkable by redirecting it onto the new inline experience.
+const RESERVED_SEGMENTS = new Set(["compare", "add", "new", "index"]);
+
+// Canonical saved addresses always have a digit (the street number) and a
+// comma (between street and city). Treat anything missing both as not-an-
+// address and bounce to /dashboard.
+function looksLikeAddress(s) {
+  return /\d/.test(s) && /,/.test(s);
+}
+
 export default function HomeReport() {
   const router = useRouter();
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
   const [state, setState] = useState({ loading: true });
+
+  // Redirect reserved or empty-looking segments to /dashboard before
+  // anything else runs.
+  useEffect(() => {
+    if (!router.isReady) return;
+    const seg = router.query.address;
+    if (
+      typeof seg === "string" &&
+      (RESERVED_SEGMENTS.has(seg.toLowerCase()) || !looksLikeAddress(seg))
+    ) {
+      router.replace("/dashboard");
+    }
+  }, [router.isReady, router.query.address, router]);
 
   useEffect(() => {
     const sb = getSupabaseClient();
