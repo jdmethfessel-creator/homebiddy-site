@@ -1522,6 +1522,7 @@ function RankedTable({
             <tr>
               <th className="rankedColRank">#</th>
               <th className="rankedColProp">Property</th>
+              <th className="rankedColNeighborhood">Neighborhood</th>
               <SortHeader label="Asking"      sortKey="asking"        activeKey={sortKey} dir={sortDir} onSort={onSort} />
               <SortHeader label="Offer range" sortKey="offer_range"   activeKey={sortKey} dir={sortDir} onSort={onSort} className="rankedColOfferRange" />
               <SortHeader label="Gap %"       sortKey="offer_gap_pct" activeKey={sortKey} dir={sortDir} onSort={onSort} className="rankedColGapPct" />
@@ -1633,15 +1634,17 @@ function RankedRow({
             </a>
           )}
         </div>
-        {submarket && (
-          <div className="rankPropNeighborhood">
-            <span className="rankNeighborhood">{submarket}</span>
-          </div>
-        )}
         {home.created_at && (
           <div className="rankPropSaved">
             Saved {savedAgo(home.created_at)}
           </div>
+        )}
+      </td>
+      <td className="rankedColNeighborhood">
+        {submarket ? (
+          <span className="rankNeighborhood">{submarket}</span>
+        ) : (
+          <span className="dashMuted">—</span>
         )}
       </td>
       <td>
