@@ -217,21 +217,6 @@ export default function Home() {
             </span>
           </div>
 
-          <div className="proof">
-            <div className="proofStat">
-              <span className="proofNum">5+</span>
-              <span className="proofLabel">real closed comps</span>
-            </div>
-            <div className="proofStat">
-              <span className="proofNum">&lt;2 min</span>
-              <span className="proofLabel">to inbox</span>
-            </div>
-            <div className="proofStat">
-              <span className="proofNum">$0</span>
-              <span className="proofLabel">first report</span>
-            </div>
-          </div>
-
           <div className="seeMore">
             <a href="#sample-report" className="seeMoreLink">
               See what you&rsquo;ll receive <ArrowDown />
