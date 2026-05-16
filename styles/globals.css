@@ -2889,6 +2889,36 @@ input {
 }
 .rankViewBtn:hover { background: var(--dash-blue-700); }
 
+/* View + Refresh sit side-by-side in the same cell. */
+.rankViewWrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.rankRefreshBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--dash-border);
+  background: #fff;
+  color: var(--dash-blue-600);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+.rankRefreshBtn:hover:not(:disabled) {
+  background: var(--dash-blue-50);
+  color: var(--dash-blue-700);
+  transform: rotate(-30deg);
+}
+.rankRefreshBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .rankUnlockBtn {
   display: inline-flex;
   align-items: center;

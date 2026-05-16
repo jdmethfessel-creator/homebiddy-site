@@ -85,6 +85,17 @@ function LockIcon({ size = 12 }) {
   );
 }
 
+function RefreshIcon({ size = 13 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <polyline points="23 4 23 10 17 10" />
+      <polyline points="1 20 1 14 7 14" />
+      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10" />
+      <path d="M20.49 15a9 9 0 0 1-14.85 3.36L1 14" />
+    </svg>
+  );
+}
+
 // Hover tooltip rendered via a React portal so the bubble can escape the
 // table's overflow-clipped scroll container. Positioned above the trigger
 // with a fixed-position bubble anchored to the trigger's bounding rect.
@@ -653,6 +664,34 @@ export default function Dashboard() {
     loadAll(token);
   }
 
+  // User-triggered refresh on an already-unlocked row. Deletes the existing
+  // reports row server-side and re-runs Claude end-to-end. Mirrors the
+  // pending-status polling flow used by save/analyze.
+  async function triggerReanalyze(homeId, address, listing_url) {
+    if (!token || !homeId || !address) return;
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(
+        "Re-run analysis for this home? Existing report data will be replaced."
+      )
+    ) {
+      return;
+    }
+    try {
+      await fetch("/api/dashboard/reanalyze", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ address, listing_url }),
+      });
+    } catch (err) {
+      console.error("reanalyze trigger failed:", err);
+    }
+    loadAll(token);
+  }
+
   // Visible-to-the-user view of homes — strips anything optimistically
   // hidden by a pending undo.
   const visibleHomes = useMemo(
@@ -794,6 +833,7 @@ export default function Dashboard() {
                 onUnlock={handleUnlock}
                 onRemove={handleRemove}
                 onRetryAnalyze={triggerAnalyze}
+                onReanalyze={triggerReanalyze}
                 pendingAddress={pendingAddress}
                 credits={plan.credits_remaining}
                 unlimited={plan.is_unlimited}
@@ -1303,6 +1343,7 @@ function RankedTable({
   onUnlock,
   onRemove,
   onRetryAnalyze,
+  onReanalyze,
   pendingAddress,
   credits,
   unlimited,
@@ -1358,6 +1399,9 @@ function RankedTable({
                   onRetryAnalyze={() =>
                     onRetryAnalyze && onRetryAnalyze(h.id, h.address, h.listing_url)
                   }
+                  onReanalyze={() =>
+                    onReanalyze && onReanalyze(h.id, h.address, h.listing_url)
+                  }
                   pending={pendingAddress === h.address}
                   credits={credits}
                   unlimited={unlimited}
@@ -1373,7 +1417,7 @@ function RankedTable({
 
 function RankedRow({
   home, rank, maxSavings, psfByMarket,
-  selected, onToggleCompare, onUnlock, onRemove, onRetryAnalyze,
+  selected, onToggleCompare, onUnlock, onRemove, onRetryAnalyze, onReanalyze,
   pending, credits, unlimited,
 }) {
   const analyzing = home.status === "pending";
@@ -1559,9 +1603,25 @@ function RankedRow({
       </td>
       <td className="rankedColView">
         {unlocked ? (
-          <Link href={`/dashboard/${encodeAddress(home.address)}`} className="rankViewBtn">
-            View →
-          </Link>
+          <span className="rankViewWrap">
+            <Link href={`/dashboard/${encodeAddress(home.address)}`} className="rankViewBtn">
+              View →
+            </Link>
+            <button
+              type="button"
+              className="rankRefreshBtn"
+              onClick={onReanalyze}
+              disabled={pending || !home.listing_url}
+              title={
+                !home.listing_url
+                  ? "Need a listing URL to re-analyze"
+                  : "Re-run Claude analysis with fresh data"
+              }
+              aria-label="Re-analyze this home"
+            >
+              <RefreshIcon />
+            </button>
+          </span>
         ) : analyzing ? (
           <span className="rankAnalyzingBadge" aria-live="polite" title="Claude is analyzing this listing — should complete within ~60s">
             <span className="rankAnalyzingSpinner" />

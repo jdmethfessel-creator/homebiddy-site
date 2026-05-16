@@ -6,6 +6,10 @@ import {
   normalizeAddress,
 } from "../../../lib/extract-address";
 import { runAnalysisForHome } from "../../../lib/dashboard-analyze";
+import {
+  FREE_SAVED_HOME_LIMIT,
+  isPaidUser,
+} from "../../../lib/plans";
 
 // 5-minute ceiling on the function's total lifetime — waitUntil keeps the
 // runtime alive after the response is sent, up to maxDuration.
@@ -134,6 +138,34 @@ export default async function handler(req, res) {
 
   let homeId = existingHome?.id;
   const initialStatus = reportExists ? "complete" : "pending";
+
+  // Plan-based saved-home limit. Only applies to NEW saves — re-saving an
+  // address that already exists for this user is a no-op and shouldn't
+  // count against the cap. Free users are limited to FREE_SAVED_HOME_LIMIT;
+  // anyone who has purchased (single / pack5 / unlimited) has no cap.
+  if (!homeId) {
+    const { data: planRow } = await supabase
+      .from("user_dashboard_plan")
+      .select("credits_remaining, is_unlimited, total_purchased")
+      .eq("user_id", auth.user.id)
+      .maybeSingle();
+    if (!isPaidUser(planRow)) {
+      const { count, error: countErr } = await supabase
+        .from("saved_homes")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", auth.user.id);
+      if (countErr) {
+        console.error("saved_homes count error:", countErr);
+      } else if ((count ?? 0) >= FREE_SAVED_HOME_LIMIT) {
+        return res.status(402).json({
+          error: `Free accounts can save up to ${FREE_SAVED_HOME_LIMIT} homes. Upgrade any tier (Single, 5-pack, or Unlimited) to save unlimited homes.`,
+          code: "free_limit",
+          saved_count: count,
+          limit: FREE_SAVED_HOME_LIMIT,
+        });
+      }
+    }
+  }
 
   if (!homeId) {
     const { data: inserted, error: insertErr } = await insertSavedHome(
