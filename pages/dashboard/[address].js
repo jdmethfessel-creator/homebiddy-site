@@ -142,6 +142,9 @@ export default function HomeReport() {
                 </div>
               </div>
 
+              <CeilingRiskCard report={report} />
+
+
               <div className="dashStatGrid">
                 <Stat label="Negotiability" value={`${report.negotiability_score} / 10`} hint="Seller flexibility" />
                 <Stat label="Days on Market" value={report.days_on_market} hint="Listing age" />
@@ -403,5 +406,51 @@ function Tile({ label, value }) {
       <div className="dashTileValue">{value}</div>
       <div className="dashTileLabel">{label}</div>
     </div>
+  );
+}
+
+// Renovated-outlier insight card. Renders only when Claude has flagged the
+// report's neighborhood_ceiling_risk. Amber styling because this is an
+// INSIGHT, not a warning — it reframes how to read the offer range, it
+// doesn't say the listing is broken.
+function CeilingRiskCard({ report }) {
+  if (!report?.data?.neighborhood_ceiling_risk) return null;
+  const ask = Number(report.asking_price);
+  const floor = Number(report.data.est_floor);
+  const pct = ask && floor ? ((ask - floor) / ask) * 100 : null;
+  const note =
+    report.data.ceiling_risk_note ||
+    "This home appears to be a renovated outlier in its neighborhood. Comps reflect an up-and-coming area where unrenovated homes sell at lower $/sqft. The seller likely has a renovation cost floor above what pure comp analysis supports.";
+  return (
+    <aside className="ceilingCard" aria-label="Neighborhood ceiling risk insight">
+      <div className="ceilingCardHead">
+        <span className="ceilingCardBadge">⚠ Renovated outlier</span>
+        <span className="ceilingCardKicker">Neighborhood ceiling risk</span>
+      </div>
+      <p className="ceilingCardBody">{note}</p>
+      {floor > 0 && (
+        <div className="ceilingCardFloor">
+          <span className="ceilingCardFloorLabel">Est. seller floor</span>
+          <span className="ceilingCardFloorValue">
+            {formatMoneyFull(floor)}
+            {pct != null && (
+              <span className="ceilingCardFloorPct">
+                {" "}(~{pct.toFixed(0)}% below ask)
+              </span>
+            )}
+          </span>
+        </div>
+      )}
+      <div className="ceilingCardApproach">
+        <div className="ceilingCardApproachLabel">How to negotiate this one</div>
+        <p className="ceilingCardApproachBody">
+          Don&apos;t lead with the $/sqft comp gap — the seller will dismiss it
+          because their finishes aren&apos;t comparable. Anchor on days on
+          market and the price-cut history instead. Frame the gap as
+          carrying-cost math (taxes, insurance, mortgage rate trend) and ask
+          what would help them move sooner.
+        </p>
+      </div>
+    </aside>
   );
 }

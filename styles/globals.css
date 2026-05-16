@@ -2589,6 +2589,31 @@ input {
 .answerCard_dark .answerBigStat { color: #fff; }
 
 .answerStatGreen { color: #15803D; }
+.answerStatAmber { color: #B45309; }
+
+/* Renovated-outlier treatment in the hero card. */
+.answerCeilingWrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  cursor: help;
+}
+.answerCeilingBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: #FEF3C7;
+  color: #92400E;
+  border: 1px solid #FDE68A;
+  border-radius: 5px;
+  padding: 2px 7px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  text-transform: uppercase;
+}
 
 .answerBigTemp {
   font-family: "Fraunces", Georgia, serif;
@@ -3398,6 +3423,132 @@ input {
   color: var(--dash-ink);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+/* Renovated-outlier cell — spans the GAP %/GAP $ pair in the ranked row. */
+.rankedColCeiling {
+  text-align: left;
+  padding-left: 8px;
+}
+.rankCeilingWrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: help;
+}
+.rankCeilingFloor {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 700;
+  font-size: 13px;
+  color: #B45309;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.rankCeilingBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: #FEF3C7;
+  color: #92400E;
+  border: 1px solid #FDE68A;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+/* ---------- Renovated-outlier insight card on the detail page ---------- */
+.ceilingCard {
+  margin: 18px 0 24px;
+  padding: 18px 20px;
+  background: #FFFBEB;
+  border: 1px solid #FDE68A;
+  border-left: 4px solid #F59E0B;
+  border-radius: 10px;
+  color: #1F2937;
+}
+.ceilingCardHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.ceilingCardBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: #FEF3C7;
+  color: #92400E;
+  border: 1px solid #FDE68A;
+  border-radius: 5px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.ceilingCardKicker {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #92400E;
+  font-weight: 600;
+}
+.ceilingCardBody {
+  margin: 0 0 12px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: #374151;
+}
+.ceilingCardFloor {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 12px;
+  background: rgba(245, 158, 11, 0.08);
+  border-radius: 6px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.ceilingCardFloorLabel {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #92400E;
+  font-weight: 700;
+}
+.ceilingCardFloorValue {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 700;
+  font-size: 20px;
+  color: #B45309;
+  font-variant-numeric: tabular-nums;
+}
+.ceilingCardFloorPct {
+  font-size: 13px;
+  font-weight: 500;
+  color: #92400E;
+}
+.ceilingCardApproach {
+  border-top: 1px solid #FDE68A;
+  padding-top: 12px;
+}
+.ceilingCardApproachLabel {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #92400E;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.ceilingCardApproachBody {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: #374151;
 }
 
 /* --- Neighborhood pill in its own column --- */

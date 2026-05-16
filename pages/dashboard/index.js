@@ -249,6 +249,37 @@ function offerRangeFlagNote(report) {
   );
 }
 
+// Renovated-outlier flag: the home's $/sqft is far above neighborhood comps
+// AND the listing language signals a renovation, so comp-based analysis
+// understates what the seller will accept. Replaces the comp-gap display
+// with an est_floor anchored to DOM + price-cut history.
+function hasCeilingRisk(report) {
+  return report?.data?.neighborhood_ceiling_risk === true;
+}
+
+function ceilingRiskNote(report) {
+  return (
+    report?.data?.ceiling_risk_note ||
+    "This home appears to be a renovated outlier in its neighborhood. Comps reflect an up-and-coming area where unrenovated homes sell at lower $/sqft. The seller likely has a renovation cost floor above what pure comp analysis supports. Treat the offer range as a market anchor, not a realistic opening bid."
+  );
+}
+
+function ceilingEstFloor(report) {
+  const v = Number(report?.data?.est_floor);
+  return v > 0 ? v : null;
+}
+
+function ceilingEstFloorPct(report) {
+  const ask = Number(report?.asking_price);
+  const floor = ceilingEstFloor(report);
+  if (!ask || !floor) return null;
+  return ((ask - floor) / ask) * 100;
+}
+
+const CEILING_TOOLTIP_TITLE = "Renovated outlier";
+const CEILING_TOOLTIP_BODY =
+  "This home appears to be a renovated outlier in its neighborhood. Comps reflect the surrounding area, not this home's finish level. The offer gap shown is an estimated floor based on seller motivation signals, not pure comp analysis.";
+
 function pickBestNegotiabilityHome(unlockedHomes) {
   return unlockedHomes.reduce((best, h) => {
     if (!h.report || h.report.negotiability_score == null) return best;
@@ -899,6 +930,8 @@ function BestDealCard({ home }) {
     : 0;
   const score = r.negotiability_score;
   const message = scoreMessage(score);
+  const ceilingRisk = hasCeilingRisk(r);
+  const ceilingPct = ceilingRisk ? ceilingEstFloorPct(r) : null;
   return (
     <AnswerCardShell kicker="Your Best Deal">
       <div className="answerHeaderRow">
@@ -908,10 +941,25 @@ function BestDealCard({ home }) {
       </div>
       <div className="bestDealRow">
         <div className="bestDealStat">
-          <div className="answerBigStat answerStatGreen">
-            {gapPct.toFixed(1)}% below ask
-          </div>
-          <div className="offerGapSubMoney">{formatMoney(gapDollars)} gap</div>
+          {ceilingRisk ? (
+            <HoverTooltip title={CEILING_TOOLTIP_TITLE} body={CEILING_TOOLTIP_BODY}>
+              <span className="answerCeilingWrap">
+                <span className="answerBigStat answerStatAmber">
+                  {ceilingPct != null
+                    ? `~${ceilingPct.toFixed(0)}% below ask`
+                    : "Est. floor"}
+                </span>
+                <span className="answerCeilingBadge">⚠ Outlier</span>
+              </span>
+            </HoverTooltip>
+          ) : (
+            <>
+              <div className="answerBigStat answerStatGreen">
+                {gapPct.toFixed(1)}% below ask
+              </div>
+              <div className="offerGapSubMoney">{formatMoney(gapDollars)} gap</div>
+            </>
+          )}
         </div>
         <ScoreGauge score={score} />
       </div>
@@ -1334,6 +1382,8 @@ function RankedRow({
   const unlocked = home.has_access && home.report;
   const submarket = getMarketKey(r);
   const dot = unlocked ? dotColorForScore(r.negotiability_score) : "muted";
+  const ceilingRisk = unlocked && hasCeilingRisk(r);
+  const ceilingFloorPct = ceilingRisk ? ceilingEstFloorPct(r) : null;
   // Deal bar tracks negotiability score directly: 9.0 → 90% width, 4.6 → 46%.
   const negScore = unlocked ? Number(r.negotiability_score) : null;
   const dealPct =
@@ -1374,22 +1424,39 @@ function RankedRow({
           <span className="dashBlur">$X,XXX,XXX</span>
         )}
       </td>
-      <td className="rankedColGapPct">
-        {unlocked && home.savings != null && r.asking_price ? (
-          <span className="rankGapPctSolo">
-            {((home.savings / r.asking_price) * 100).toFixed(1)}%
-          </span>
-        ) : (
-          <span className="dashBlur">XX%</span>
-        )}
-      </td>
-      <td className="rankedColGapDollar">
-        {unlocked && home.savings != null ? (
-          <span className="rankGapDollarSolo">{formatMoney(home.savings)}</span>
-        ) : (
-          <span className="dashBlur">$XXK</span>
-        )}
-      </td>
+      {unlocked && ceilingRisk ? (
+        <td className="rankedColCeiling" colSpan={2}>
+          <HoverTooltip title={CEILING_TOOLTIP_TITLE} body={CEILING_TOOLTIP_BODY}>
+            <span className="rankCeilingWrap">
+              <span className="rankCeilingFloor">
+                {ceilingFloorPct != null
+                  ? `~${ceilingFloorPct.toFixed(0)}% below ask`
+                  : "Est. floor"}
+              </span>
+              <span className="rankCeilingBadge">⚠ Outlier</span>
+            </span>
+          </HoverTooltip>
+        </td>
+      ) : (
+        <>
+          <td className="rankedColGapPct">
+            {unlocked && home.savings != null && r.asking_price ? (
+              <span className="rankGapPctSolo">
+                {((home.savings / r.asking_price) * 100).toFixed(1)}%
+              </span>
+            ) : (
+              <span className="dashBlur">XX%</span>
+            )}
+          </td>
+          <td className="rankedColGapDollar">
+            {unlocked && home.savings != null ? (
+              <span className="rankGapDollarSolo">{formatMoney(home.savings)}</span>
+            ) : (
+              <span className="dashBlur">$XXK</span>
+            )}
+          </td>
+        </>
+      )}
       <td>
         {unlocked && r.sqft ? (
           <span className="rankSizeMain">{Number(r.sqft).toLocaleString()}</span>
