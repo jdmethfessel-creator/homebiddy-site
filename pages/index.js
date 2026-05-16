@@ -255,8 +255,8 @@ export default function Home() {
           </h1>
           <p className="heroSub">
             Paste any Zillow or Realtor.com link. We analyze closed sales,
-            listing data, market dynamics and nearby comps to tell you exactly
-            what to offer and why. Backed by real data, not gut feeling.
+            listing data, market dynamics and nearby comps to give you a
+            data-backed offer in under 2 minutes.
           </p>
 
           {returnNotice === "canceled" && (
@@ -317,11 +317,6 @@ export default function Home() {
             </span>
           </div>
 
-          <div className="seeMore">
-            <a href="#sample-report" className="seeMoreLink">
-              See what you&rsquo;ll receive <ArrowDown />
-            </a>
-          </div>
         </section>
 
         <section id="sample-report" className="divider" aria-label="Sample report intro">
