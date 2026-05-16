@@ -1,13 +1,33 @@
 import Head from "next/head";
 import { useEffect, useRef, useState } from "react";
 
-const FORMSPREE_ENDPOINT = "https://formspree.io/f/mgodjjpl";
-
 const STEPS = [
   "Fetching listing details",
   "Pulling nearby closed sales",
   "Analyzing comp features",
   "Building your offer report",
+];
+
+const PRICING = [
+  {
+    id: "single",
+    label: "Single Report",
+    price: "$19.99",
+    hint: "One full offer report",
+  },
+  {
+    id: "pack5",
+    label: "5 Reports",
+    price: "$49.99",
+    hint: "Just $10 per report",
+    badge: "Best value",
+  },
+  {
+    id: "unlimited",
+    label: "Unlimited",
+    price: "$69.99",
+    hint: "Unlimited reports — one-time payment",
+  },
 ];
 
 function HouseIcon({ size = 18, color = "currentColor" }) {
@@ -68,21 +88,39 @@ function ArrowDown() {
 export default function Home() {
   const [url, setUrl] = useState("");
   const [email, setEmail] = useState("");
-  const [overlayState, setOverlayState] = useState("idle"); // idle | processing | success
+  const [overlayState, setOverlayState] = useState("idle"); // idle | submitting | processing | success | error
   const [activeStep, setActiveStep] = useState(0);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [showPricing, setShowPricing] = useState(false);
+  const [checkoutLoading, setCheckoutLoading] = useState(null);
+  const [returnNotice, setReturnNotice] = useState(null); // "paid" | "canceled" | null
   const timeouts = useRef([]);
+
+  // Handle return from Stripe Checkout
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("paid") === "1") {
+      setReturnNotice("paid");
+      runProcessingThenSuccess();
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (params.get("canceled") === "1") {
+      setReturnNotice("canceled");
+      window.history.replaceState({}, document.title, window.location.pathname);
+      const t = setTimeout(() => setReturnNotice(null), 4500);
+      return () => clearTimeout(t);
+    }
+  }, []);
 
   useEffect(() => {
     return () => timeouts.current.forEach(clearTimeout);
   }, []);
 
-  function startProcessing() {
+  function runProcessingThenSuccess() {
     setOverlayState("processing");
     setActiveStep(0);
     timeouts.current.forEach(clearTimeout);
     timeouts.current = [];
-
-    // Each step lasts ~900ms; total ~3.6s then success
     STEPS.forEach((_, i) => {
       timeouts.current.push(
         setTimeout(() => setActiveStep(i + 1), (i + 1) * 900)
@@ -95,22 +133,68 @@ export default function Home() {
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!url || !email) return;
+    if (!url || !email || overlayState === "submitting" || overlayState === "processing") return;
 
-    startProcessing();
+    setErrorMessage("");
+    setOverlayState("submitting");
 
-    // Fire submission to Formspree; don't await — we keep the simulated UX timing
+    let json;
     try {
-      const fd = new FormData();
-      fd.append("listing_url", url);
-      fd.append("email", email);
-      fetch(FORMSPREE_ENDPOINT, {
+      const r = await fetch("/api/submit", {
         method: "POST",
-        body: fd,
-        headers: { Accept: "application/json" },
-      }).catch(() => {});
-    } catch (_) {
-      // swallow — user still sees the progress overlay
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ listing_url: url, email }),
+      });
+      json = await r.json();
+      if (!r.ok) {
+        setErrorMessage(json?.error || "Something went wrong. Try again.");
+        setOverlayState("error");
+        return;
+      }
+    } catch (err) {
+      setErrorMessage("Network error. Try again.");
+      setOverlayState("error");
+      return;
+    }
+
+    if (json.status === "submitted") {
+      runProcessingThenSuccess();
+      return;
+    }
+
+    if (json.status === "payment_required") {
+      setOverlayState("idle");
+      setShowPricing(true);
+      return;
+    }
+
+    setErrorMessage("Unexpected response. Try again.");
+    setOverlayState("error");
+  }
+
+  async function pickPlan(planId) {
+    if (checkoutLoading) return;
+    setCheckoutLoading(planId);
+    try {
+      const r = await fetch("/api/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ listing_url: url, email, plan: planId }),
+      });
+      const json = await r.json();
+      if (r.ok && json.url) {
+        window.location.href = json.url;
+        return;
+      }
+      setErrorMessage(json?.error || "Could not start checkout.");
+      setShowPricing(false);
+      setOverlayState("error");
+    } catch (err) {
+      setErrorMessage("Network error starting checkout.");
+      setShowPricing(false);
+      setOverlayState("error");
+    } finally {
+      setCheckoutLoading(null);
     }
   }
 
@@ -119,14 +203,21 @@ export default function Home() {
     setActiveStep(0);
     setUrl("");
     setEmail("");
+    setShowPricing(false);
+    setErrorMessage("");
     timeouts.current.forEach(clearTimeout);
     timeouts.current = [];
   }
 
+  const showOverlay = overlayState !== "idle";
   const progressPct =
     overlayState === "success"
       ? 100
-      : Math.min(100, (activeStep / STEPS.length) * 100);
+      : overlayState === "processing"
+      ? Math.min(100, (activeStep / STEPS.length) * 100)
+      : overlayState === "submitting"
+      ? 10
+      : 0;
 
   return (
     <>
@@ -134,7 +225,7 @@ export default function Home() {
         <title>HomeBiddy — Your home buying buddy</title>
         <meta
           name="description"
-          content="Paste any Zillow or Realtor.com link. We analyze actual closed sales and nearby comps to tell you exactly what to offer."
+          content="Paste any Zillow or Realtor.com link. We analyze closed sales, listing data and nearby comps to tell you exactly what to offer."
         />
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
         <meta property="og:title" content="HomeBiddy — Stop guessing. Bid with proof." />
@@ -148,7 +239,6 @@ export default function Home() {
       <div className="topStripe" />
 
       <main className="page">
-        {/* ============ LANDING ============ */}
         <header className="header">
           <div className="logo">
             <span className="logoIcon">
@@ -168,6 +258,12 @@ export default function Home() {
             listing data, market dynamics and nearby comps to tell you exactly
             what to offer and why. Backed by real data, not gut feeling.
           </p>
+
+          {returnNotice === "canceled" && (
+            <div className="canceledNote" role="status">
+              Payment canceled. Pick a plan to continue when you&rsquo;re ready.
+            </div>
+          )}
 
           <form className="formCard" onSubmit={handleSubmit} noValidate>
             <div className="formField">
@@ -204,8 +300,12 @@ export default function Home() {
                 autoComplete="email"
               />
             </div>
-            <button type="submit" className="goButton" disabled={overlayState === "processing"}>
-              Go <ArrowRight />
+            <button
+              type="submit"
+              className="goButton"
+              disabled={overlayState === "submitting" || overlayState === "processing"}
+            >
+              {overlayState === "submitting" ? "Checking…" : <>Go <ArrowRight /></>}
             </button>
           </form>
 
@@ -224,13 +324,11 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ============ DIVIDER ============ */}
         <section id="sample-report" className="divider" aria-label="Sample report intro">
           <div className="dividerKicker">Sample Report</div>
           <div className="dividerAddress">442 28th St, West Palm Beach FL 33407</div>
         </section>
 
-        {/* ============ SAMPLE REPORT ============ */}
         <article className="report" aria-label="Sample offer report">
           <div className="reportHeader">
             <div className="reportLogo">
@@ -420,11 +518,58 @@ export default function Home() {
         </article>
       </main>
 
-      {/* ============ PROCESSING OVERLAY ============ */}
-      {overlayState !== "idle" && (
+      {/* ============ PRICING MODAL ============ */}
+      {showPricing && (
+        <div className="overlay" role="dialog" aria-modal="true" aria-labelledby="pricing-title">
+          <div className="overlayCard pricingCard">
+            <div className="overlayHeader">
+              <h2 className="overlayTitle" id="pricing-title">You&rsquo;ve used your free report</h2>
+              <p className="overlaySub">Pick a plan to keep going. One-time payments — no subscriptions.</p>
+            </div>
+            <div className="planList">
+              {PRICING.map((p) => (
+                <button
+                  key={p.id}
+                  className={`plan ${p.badge ? "planFeatured" : ""}`}
+                  type="button"
+                  onClick={() => pickPlan(p.id)}
+                  disabled={!!checkoutLoading}
+                >
+                  {p.badge && <span className="planBadge">{p.badge}</span>}
+                  <div className="planRow">
+                    <div className="planLeft">
+                      <div className="planLabel">{p.label}</div>
+                      <div className="planHint">{p.hint}</div>
+                    </div>
+                    <div className="planRight">
+                      <div className="planPrice">{p.price}</div>
+                      {checkoutLoading === p.id ? (
+                        <span className="planSpinner" />
+                      ) : (
+                        <span className="planArrow"><ArrowRight /></span>
+                      )}
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              className="dismissLink"
+              onClick={() => setShowPricing(false)}
+              disabled={!!checkoutLoading}
+            >
+              Not now
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ============ PROCESSING / SUCCESS / ERROR OVERLAY ============ */}
+      {showOverlay && (
         <div className="overlay" role="dialog" aria-live="polite" aria-modal="true">
           <div className="overlayCard">
-            {overlayState === "processing" && (
+            {(overlayState === "submitting" || overlayState === "processing") && (
               <>
                 <div className="overlayHeader">
                   <h2 className="overlayTitle">Building your report</h2>
@@ -435,8 +580,8 @@ export default function Home() {
                 </div>
                 <ul className="stepList" style={{ listStyle: "none", margin: 0, padding: 0 }}>
                   {STEPS.map((label, i) => {
-                    const done = i < activeStep;
-                    const active = i === activeStep;
+                    const done = overlayState === "processing" && i < activeStep;
+                    const active = overlayState === "processing" && i === activeStep;
                     return (
                       <li
                         key={label}
@@ -472,6 +617,16 @@ export default function Home() {
                 </p>
                 <button type="button" className="submitAnother" onClick={resetForm}>
                   + Submit another listing
+                </button>
+              </div>
+            )}
+
+            {overlayState === "error" && (
+              <div className="success">
+                <h2 className="successTitle">Hmm, that didn&rsquo;t work</h2>
+                <p className="successSub">{errorMessage || "Something went wrong. Please try again."}</p>
+                <button type="button" className="submitAnother" onClick={() => { setOverlayState("idle"); setErrorMessage(""); }}>
+                  Try again
                 </button>
               </div>
             )}

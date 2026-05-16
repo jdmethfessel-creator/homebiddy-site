@@ -808,6 +808,146 @@ input {
   background: #1d4fd1;
 }
 
+/* === PRICING MODAL === */
+.pricingCard {
+  max-width: 440px;
+  padding: 24px 20px 18px;
+}
+
+.planList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 4px 0 14px;
+}
+
+.plan {
+  position: relative;
+  width: 100%;
+  text-align: left;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px 14px;
+  transition: border-color 0.15s, background 0.15s, transform 0.05s;
+  cursor: pointer;
+}
+
+.plan:hover:not(:disabled) {
+  border-color: var(--blue);
+  background: var(--blue-light);
+}
+
+.plan:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.planFeatured {
+  border-color: var(--blue);
+  background: var(--blue-light);
+}
+
+.planBadge {
+  position: absolute;
+  top: -9px;
+  right: 12px;
+  background: var(--blue);
+  color: var(--white);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+
+.planRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.planLeft {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.planLabel {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 600;
+  font-size: 17px;
+  color: var(--navy);
+  line-height: 1.15;
+}
+
+.planHint {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.planRight {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.planPrice {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 700;
+  font-size: 20px;
+  color: var(--navy);
+  line-height: 1;
+}
+
+.planArrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--blue);
+  color: var(--white);
+}
+
+.planSpinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--blue-mid);
+  border-top-color: var(--blue);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+.dismissLink {
+  display: block;
+  width: 100%;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+  padding: 6px 0;
+  margin-top: 2px;
+}
+
+.dismissLink:hover {
+  color: var(--navy);
+}
+
+.canceledNote {
+  margin-top: 14px;
+  padding: 10px 12px;
+  background: #FEF3C7;
+  color: #92400E;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 /* === ANIMATIONS === */
 @keyframes spin {
   to {
