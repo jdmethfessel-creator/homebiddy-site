@@ -548,19 +548,21 @@ export default function Dashboard() {
             </div>
           )}
           {ranked.length > 0 && (
-            <RankedTable
-              ranked={ranked}
-              maxSavings={maxSavings}
-              psfByMarket={psfByMarket}
-              selectedSet={selectedCompare}
-              onToggleCompare={toggleCompare}
-              onUnlock={handleUnlock}
-              onRemove={handleRemove}
-              onRetryAnalyze={triggerAnalyze}
-              pendingAddress={pendingAddress}
-              credits={plan.credits_remaining}
-              unlimited={plan.is_unlimited}
-            />
+            <div id="ranked-homes">
+              <RankedTable
+                ranked={ranked}
+                maxSavings={maxSavings}
+                psfByMarket={psfByMarket}
+                selectedSet={selectedCompare}
+                onToggleCompare={toggleCompare}
+                onUnlock={handleUnlock}
+                onRemove={handleRemove}
+                onRetryAnalyze={triggerAnalyze}
+                pendingAddress={pendingAddress}
+                credits={plan.credits_remaining}
+                unlimited={plan.is_unlimited}
+              />
+            </div>
           )}
 
           {compareLimitMessage && (
@@ -710,9 +712,6 @@ function BestDealCard({ home }) {
             {gapPct.toFixed(1)}% below ask
           </div>
           <div className="offerGapSubMoney">{formatMoney(gapDollars)} gap</div>
-          <div className="answerSubline">
-            <strong>Most negotiable</strong> home in your list
-          </div>
         </div>
         <ScoreGauge score={score} />
       </div>
@@ -823,6 +822,9 @@ function ValueBreakdownCard({ unlockedHomes, bestLiving, bestLot, bestLandPlay, 
       {hasLandScore && (
         <LandPlayRow winner={bestLandPlay} unlockedHomes={unlockedHomes} />
       )}
+      <a href="#ranked-homes" className="answerLink valueFullLink">
+        Full breakdown →
+      </a>
     </AnswerCardShell>
   );
 }
@@ -831,12 +833,14 @@ function ValueBreakdownCard({ unlockedHomes, bestLiving, bestLot, bestLandPlay, 
 // other homes on the list. A home priced at the neighborhood average gets
 // a 50% bar. Below avg = longer, fuller green bar (better value). Above
 // avg = shorter, lighter bar (worse value).
+// Show only the #1 ranked home per category — the rest live in the ranked
+// table below. Bar is scaled against the winner's own submarket average:
+// parity = 50%, below-avg = longer green, above-avg = shorter slate.
 function ValueMetricRow({ label, winner, field, psfKey, unlockedHomes, psfByMarket }) {
   const homes = unlockedHomes
     .filter((h) => h.report?.[field] != null && !isNaN(Number(h.report[field])))
     .map((h) => ({ ...h, _v: Number(h.report[field]) }))
-    .sort((a, b) => a._v - b._v)
-    .slice(0, MAX_BARS_PER_CARD);
+    .sort((a, b) => a._v - b._v);
   if (homes.length === 0) {
     return (
       <div className="valueRow">
@@ -847,16 +851,21 @@ function ValueMetricRow({ label, winner, field, psfKey, unlockedHomes, psfByMark
     );
   }
 
-  function marketAvgFor(home) {
-    const key = getMarketKey(home.report);
-    const entry = key && psfByMarket ? psfByMarket.get(key) : null;
-    return entry ? entry[psfKey] || null : null;
-  }
+  const top = homes[0];
+  const submarket = getMarketKey(top.report);
+  const entry = submarket && psfByMarket ? psfByMarket.get(submarket) : null;
+  const avg = entry ? entry[psfKey] || null : null;
 
-  // Track whether any home actually has a usable market average — drives
-  // whether the footer line renders.
-  const winnerAvg = winner ? marketAvgFor(winner) : null;
-  const winnerSubmarket = winner ? getMarketKey(winner.report) : null;
+  let pct;
+  let below;
+  if (avg && avg > 0) {
+    const ratio = top._v / avg;
+    pct = Math.max(10, Math.min(100, Math.round(50 + (1 - ratio) * 50)));
+    below = top._v <= avg;
+  } else {
+    pct = 100;
+    below = true;
+  }
 
   return (
     <div className="valueRow">
@@ -864,43 +873,19 @@ function ValueMetricRow({ label, winner, field, psfKey, unlockedHomes, psfByMark
         <div className="valueRowLabel">{label}</div>
       </div>
       <div className="valueBars">
-        {homes.map((h) => {
-          const avg = marketAvgFor(h);
-          let pct;
-          let below;
-          if (avg && avg > 0) {
-            const ratio = h._v / avg;
-            // 50% at parity; +50% per 100% under avg; -50% per 100% over.
-            pct = Math.max(10, Math.min(100, Math.round(50 + (1 - ratio) * 50)));
-            below = h._v <= avg;
-          } else {
-            // Fallback when no submarket avg is available: scale against the
-            // best home in the list.
-            const min = homes[0]._v;
-            pct = Math.max(10, Math.round((min / h._v) * 100));
-            below = h.id === homes[0].id;
-          }
-          return (
-            <div key={h.id} className="valueBarRow">
-              <div className="valueBarLabel">
-                <span className="valueBarPsf">${Math.round(h._v).toLocaleString()}</span>
-                <span className="valueBarAddr">{shortAddress(h.address)}</span>
-              </div>
-              <div className="valueRaceBar">
-                <div
-                  className={`valueRaceFill ${below ? "valueRaceFillBelow" : "valueRaceFillAbove"}`}
-                  style={{ width: `${pct}%` }}
-                />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      {winnerAvg && winnerSubmarket && (
-        <div className="valueMarketRef">
-          {winnerSubmarket} avg <strong>${winnerAvg.toLocaleString()}/sqft</strong>
+        <div className="valueBarRow">
+          <div className="valueBarLabel">
+            <span className="valueBarPsf">${Math.round(top._v).toLocaleString()}</span>
+            <span className="valueBarAddr">{shortAddress(top.address)}</span>
+          </div>
+          <div className="valueRaceBar">
+            <div
+              className={`valueRaceFill ${below ? "valueRaceFillBelow" : "valueRaceFillAbove"}`}
+              style={{ width: `${pct}%` }}
+            />
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -917,36 +902,29 @@ function LandPlayRow({ winner, unlockedHomes }) {
         !isNaN(Number(h.report.land_arbitrage_score))
     )
     .map((h) => ({ ...h, _s: Number(h.report.land_arbitrage_score) }))
-    .sort((a, b) => b._s - a._s)
-    .slice(0, MAX_BARS_PER_CARD);
+    .sort((a, b) => b._s - a._s);
   if (homes.length === 0) return null;
-  const shortNotes = truncateWords(winner?.report?.land_arbitrage_notes, 8);
+  const top = homes[0];
+  const pct = Math.max(10, Math.min(100, Math.round((top._s / 10) * 100)));
   return (
     <div className="valueRow">
       <div className="valueRowHeader">
         <div className="valueRowLabel">Best Land Play</div>
       </div>
       <div className="valueBars">
-        {homes.map((h, i) => {
-          const pct = Math.max(10, Math.min(100, Math.round((h._s / 10) * 100)));
-          const isWinner = i === 0;
-          return (
-            <div key={h.id} className="valueBarRow">
-              <div className="valueBarLabel">
-                <span className="valueBarPsf">{h._s.toFixed(1)}/10</span>
-                <span className="valueBarAddr">{shortAddress(h.address)}</span>
-              </div>
-              <div className="valueRaceBar">
-                <div
-                  className={`valueRaceFill ${isWinner ? "valueRaceFillBelow" : "valueRaceFillAbove"}`}
-                  style={{ width: `${pct}%` }}
-                />
-              </div>
-            </div>
-          );
-        })}
+        <div className="valueBarRow">
+          <div className="valueBarLabel">
+            <span className="valueBarPsf">{top._s.toFixed(1)}/10</span>
+            <span className="valueBarAddr">{shortAddress(top.address)}</span>
+          </div>
+          <div className="valueRaceBar">
+            <div
+              className="valueRaceFill valueRaceFillBelow"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+        </div>
       </div>
-      {shortNotes && <div className="valueLandNotes">{shortNotes}</div>}
     </div>
   );
 }

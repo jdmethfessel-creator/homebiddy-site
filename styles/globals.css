@@ -2312,8 +2312,15 @@ input {
   box-shadow: var(--dash-shadow-md);
   display: flex;
   flex-direction: column;
-  min-height: 170px;
+  /* All three cards share the same height; grid+align-items handles the
+     row-by-row alignment, and min-height anchors the baseline so they
+     don't shrink too short when content is sparse. */
+  min-height: 220px;
   gap: 8px;
+}
+
+.valueFullLink {
+  margin-top: auto;
 }
 
 .answerCard_dark {
