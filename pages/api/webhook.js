@@ -53,18 +53,18 @@ export default async function handler(req, res) {
 
   const session = event.data.object;
   const meta = session.metadata || {};
-  const type = meta.type || "plan"; // back-compat: untagged metadata = landing-page plan
+  const type = meta.type || "plan";
 
-  // Two strictly separate flows:
-  //   - "plan": anonymous landing-page purchase → updates public.users + Formspree
-  //   - "address_report": authenticated dashboard purchase → grants report_access
-  // Misrouted metadata is logged and ignored — never cross over.
-  if (type === "address_report") {
-    return handleAddressReport(session, res);
-  }
-  if (type === "plan") {
-    return handlePlanPurchase(session, res);
-  }
+  // Dispatch:
+  //   - "plan": landing anonymous purchase  → public.users + Formspree
+  //   - "address_report": dashboard per-address → report_access
+  //   - "dashboard_pack5": dashboard credits → user_dashboard_plan +5 credits
+  //   - "dashboard_unlimited": dashboard lifetime → user_dashboard_plan.is_unlimited
+  if (type === "plan") return handlePlanPurchase(session, res);
+  if (type === "address_report") return handleAddressReport(session, res);
+  if (type === "dashboard_pack5") return handleDashboardCredits(session, res, 5);
+  if (type === "dashboard_unlimited") return handleDashboardUnlimited(session, res);
+
   console.warn("Webhook: unknown metadata.type", { type, meta });
   return res.status(200).json({ received: true, ignored: type });
 }
@@ -95,9 +95,125 @@ async function handleAddressReport(session, res) {
     console.error("Supabase report_access error:", err);
   }
 
-  // Notify the team to generate (or fulfill) the report.
   if (email) {
-    await submitToFormspree({ listing_url: `${listing_url}\nADDRESS: ${address}`, email });
+    await submitToFormspree({
+      listing_url: `${listing_url}\nADDRESS: ${address}\nUSER: ${email}`,
+      email,
+    });
+  }
+
+  return res.status(200).json({ received: true });
+}
+
+async function handleDashboardCredits(session, res, credits) {
+  const meta = session.metadata || {};
+  const userId = meta.user_id;
+  const email = (meta.email || "").trim().toLowerCase();
+  if (!userId) {
+    console.error("dashboard_credits missing user_id", { meta });
+    return res.status(200).json({ received: true, error: "missing user_id" });
+  }
+
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data: existing } = await supabase
+      .from("user_dashboard_plan")
+      .select("credits_remaining, total_purchased")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (existing) {
+      await supabase
+        .from("user_dashboard_plan")
+        .update({
+          credits_remaining: (existing.credits_remaining ?? 0) + credits,
+          total_purchased: (existing.total_purchased ?? 0) + credits,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("user_id", userId);
+    } else {
+      await supabase.from("user_dashboard_plan").insert({
+        user_id: userId,
+        credits_remaining: credits,
+        total_purchased: credits,
+        is_unlimited: false,
+      });
+    }
+  } catch (err) {
+    console.error("Supabase credits error:", err);
+  }
+
+  if (email) {
+    await submitToFormspree({
+      listing_url: `DASHBOARD_5PACK\nUSER: ${email}`,
+      email,
+    });
+  }
+
+  return res.status(200).json({ received: true });
+}
+
+async function handleDashboardUnlimited(session, res) {
+  const meta = session.metadata || {};
+  const userId = meta.user_id;
+  const email = (meta.email || "").trim().toLowerCase();
+  if (!userId) {
+    console.error("dashboard_unlimited missing user_id", { meta });
+    return res.status(200).json({ received: true, error: "missing user_id" });
+  }
+
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data: existing } = await supabase
+      .from("user_dashboard_plan")
+      .select("user_id")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (existing) {
+      await supabase
+        .from("user_dashboard_plan")
+        .update({
+          is_unlimited: true,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("user_id", userId);
+    } else {
+      await supabase.from("user_dashboard_plan").insert({
+        user_id: userId,
+        credits_remaining: 0,
+        is_unlimited: true,
+      });
+    }
+
+    // Backfill access for all saved homes that have reports
+    const { data: homes } = await supabase
+      .from("saved_homes")
+      .select("address")
+      .eq("user_id", userId);
+    if (homes && homes.length > 0) {
+      const addresses = homes.map((h) => h.address);
+      const { data: reports } = await supabase
+        .from("reports")
+        .select("address")
+        .in("address", addresses);
+      if (reports && reports.length > 0) {
+        const rows = reports.map((r) => ({
+          user_id: userId,
+          address: r.address,
+          stripe_session_id: "unlimited",
+        }));
+        await supabase.from("report_access").upsert(rows, { onConflict: "user_id,address" });
+      }
+    }
+  } catch (err) {
+    console.error("Supabase unlimited error:", err);
+  }
+
+  if (email) {
+    await submitToFormspree({
+      listing_url: `DASHBOARD_UNLIMITED\nUSER: ${email}`,
+      email,
+    });
   }
 
   return res.status(200).json({ received: true });

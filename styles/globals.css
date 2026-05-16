@@ -1908,3 +1908,420 @@ input {
   color: #DBEAFE;
   margin-top: 2px;
 }
+
+/* === Shopping timeline === */
+.dashTimeline {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  background: var(--dash-surface);
+  border: 1px solid var(--dash-border);
+  border-radius: 14px;
+  padding: 14px;
+  margin-bottom: 18px;
+  box-shadow: var(--dash-shadow-sm);
+}
+
+@media (min-width: 720px) {
+  .dashTimeline {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.dashTimelineCell {
+  min-width: 0;
+}
+
+.dashTimelineKicker {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dash-muted);
+  margin-bottom: 2px;
+}
+
+.dashTimelineValue {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--dash-ink);
+  line-height: 1.2;
+}
+
+.dashTimelineAddr {
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashTimelineSub {
+  font-size: 12px;
+  color: var(--dash-muted);
+  margin-top: 2px;
+}
+
+.dashTimelinePlan .dashTimelineValue {
+  color: var(--dash-blue-700);
+  font-size: 15px;
+}
+
+/* === Best value hero v2 === */
+.dashBestPrices {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.dashBestKicker {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.85;
+  margin-bottom: 2px;
+  font-family: "DM Sans", sans-serif;
+}
+
+.dashBestArrow {
+  font-size: 22px;
+  opacity: 0.65;
+}
+
+.dashBestPurchase {
+  color: #fff;
+}
+
+.dashBestUpsideRow {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.dashBestUpsideAmt {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 700;
+  font-size: 28px;
+  letter-spacing: -0.01em;
+}
+
+.dashBestUpsideLabel {
+  font-size: 12.5px;
+  color: #DBEAFE;
+}
+
+.dashBestUpsideLabel strong {
+  color: #fff;
+}
+
+.dashBestExplain {
+  margin-top: 10px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: #E0E7FF;
+}
+
+/* === Upsell banner === */
+.dashUpsell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: var(--dash-blue-50);
+  border: 1px solid var(--dash-blue-200);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 18px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, border-color 0.15s, transform 0.05s;
+  gap: 12px;
+}
+
+.dashUpsell:hover {
+  background: var(--dash-blue-100);
+  border-color: var(--dash-blue-300);
+}
+
+.dashUpsell:active {
+  transform: translateY(1px);
+}
+
+.dashUpsellLeft {
+  flex: 1;
+  min-width: 0;
+}
+
+.dashUpsellBadge {
+  display: inline-block;
+  background: var(--dash-blue-600);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 999px;
+  margin-bottom: 6px;
+}
+
+.dashUpsellHeadline {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--dash-blue-900);
+  line-height: 1.25;
+}
+
+.dashUpsellSub {
+  font-size: 12.5px;
+  color: var(--dash-muted);
+  margin-top: 3px;
+  line-height: 1.4;
+}
+
+.dashUpsellRight {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.dashUpsellPrice {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 700;
+  font-size: 20px;
+  color: var(--dash-blue-800);
+}
+
+.dashUpsellArrow {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--dash-blue-600);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+}
+
+/* === Freemium blur/lock state === */
+.dashCardLocked {
+  position: relative;
+}
+
+.dashBlur {
+  display: inline-block;
+  color: transparent !important;
+  text-shadow: 0 0 8px rgba(30, 58, 138, 0.55);
+  user-select: none;
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 700;
+}
+
+.dashCardLockHint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--dash-muted);
+  margin-top: 2px;
+  letter-spacing: 0.02em;
+}
+
+.dashCardCtaSm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--dash-blue-600);
+  color: #fff;
+  border: none;
+  font-weight: 600;
+  font-size: 12.5px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+  margin-top: 0;
+}
+
+.dashCardCtaSm:hover { background: var(--dash-blue-700); }
+.dashCardCtaSm:disabled { opacity: 0.7; cursor: not-allowed; }
+
+/* === Market intelligence === */
+.dashMarketHeading {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 700;
+  font-size: 19px;
+  color: var(--dash-ink);
+  margin: 28px 0 12px;
+  letter-spacing: -0.005em;
+}
+
+.dashMarketGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+@media (min-width: 720px) {
+  .dashMarketGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1000px) {
+  .dashMarketGrid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.dashMarketCard {
+  background: var(--dash-surface);
+  border: 1px solid var(--dash-border);
+  border-radius: 12px;
+  padding: 14px;
+  box-shadow: var(--dash-shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dashMarketName {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 700;
+  font-size: 17px;
+  color: var(--dash-blue-900);
+}
+
+.dashMarketBadge {
+  align-self: flex-start;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 999px;
+}
+
+.dashMarketBadge_hot {
+  background: #FEF3C7;
+  color: #92400E;
+}
+
+.dashMarketBadge_cool {
+  background: var(--dash-blue-50);
+  color: var(--dash-blue-800);
+}
+
+.dashMarketBadge_neutral {
+  background: #F1F5F9;
+  color: var(--dash-muted);
+}
+
+.dashMarketRow {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.dashMarketRow > div {
+  min-width: 70px;
+}
+
+.dashMarketRow strong {
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 18px;
+  color: var(--dash-ink);
+}
+
+.dashMarketSample {
+  font-size: 11.5px;
+  color: var(--dash-muted);
+  margin-top: 2px;
+}
+
+.dashMarketEmpty {
+  font-size: 13px;
+  color: var(--dash-muted);
+}
+
+/* === Compare table winner === */
+.compareWinner {
+  background: #ECFDF5;
+  color: #047857 !important;
+  font-weight: 700 !important;
+}
+
+.compareWinnerDot {
+  color: #10B981;
+  margin-right: 5px;
+  font-size: 10px;
+}
+
+.compareLocked {
+  color: var(--dash-muted) !important;
+  font-style: italic;
+  font-weight: 400 !important;
+}
+
+/* === Admin page === */
+.adminPage {
+  min-height: calc(100vh - 3px);
+  background: var(--dash-bg);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 50px 20px;
+}
+
+.adminCard {
+  width: 100%;
+  max-width: 720px;
+  background: var(--dash-surface);
+  border: 1px solid var(--dash-border);
+  border-radius: 16px;
+  padding: 26px 22px 22px;
+  box-shadow: var(--dash-shadow-md);
+}
+
+.adminTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.adminTextarea {
+  width: 100%;
+  min-height: 280px;
+  padding: 13px 14px;
+  border: 1px solid var(--dash-border);
+  background: var(--dash-blue-50);
+  border-radius: 10px;
+  font-size: 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--dash-ink);
+  outline: none;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.adminTextarea:focus {
+  border-color: var(--dash-blue-600);
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}

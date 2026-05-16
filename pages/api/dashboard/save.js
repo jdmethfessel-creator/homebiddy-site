@@ -55,14 +55,19 @@ export default async function handler(req, res) {
     homeId = inserted.id;
   }
 
-  // Does a report exist for this address?
   const { data: report } = await supabase
     .from("reports")
     .select("address")
     .eq("address", address)
     .maybeSingle();
 
-  // Does this user have access?
+  // Auto-grant access for unlimited users
+  const { data: plan } = await supabase
+    .from("user_dashboard_plan")
+    .select("is_unlimited")
+    .eq("user_id", auth.user.id)
+    .maybeSingle();
+
   let hasAccess = false;
   if (report) {
     const { data: access } = await supabase
@@ -72,6 +77,14 @@ export default async function handler(req, res) {
       .eq("address", address)
       .maybeSingle();
     hasAccess = !!access;
+    if (!hasAccess && plan?.is_unlimited) {
+      const { error: grantErr } = await supabase.from("report_access").insert({
+        user_id: auth.user.id,
+        address,
+        stripe_session_id: "unlimited",
+      });
+      if (!grantErr) hasAccess = true;
+    }
   }
 
   return res.status(200).json({

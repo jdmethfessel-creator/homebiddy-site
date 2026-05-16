@@ -126,17 +126,18 @@ export default function HomeReport() {
 
               {scoring && (
                 <div className="dashUpsideCard">
-                  <div className="dashUpsideKicker">Conservative 3-year upside</div>
-                  <div className="dashUpsideAmount">{formatMoneyFull(scoring.conservative_upside)}</div>
+                  <div className="dashUpsideKicker">Conservative 3-year value</div>
+                  <div className="dashUpsideAmount">{formatMoneyFull(scoring.projected_value_3yr)}</div>
                   <div className="dashUpsideMeta">
-                    Value score <strong>{scoring.score}/100</strong> · {scoring.discount_pct}% below ask
+                    Estimated <strong>{formatMoneyFull(scoring.estimated_equity)}</strong> in equity ·
+                    {" "}value score <strong>{scoring.score}/100</strong>
                   </div>
                 </div>
               )}
 
               {Array.isArray(reportData.insights) && (
                 <>
-                  <h2 className="dashH2">What the Data Tells You</h2>
+                  <h2 className="dashH2">Why This Number</h2>
                   <ol className="dashInsights">
                     {reportData.insights.map((line, i) => (
                       <li key={i} className="dashInsight">
