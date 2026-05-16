@@ -311,10 +311,7 @@ export default function Home() {
 
           <div className="freeNote">
             <span className="freeBadge">FREE</span>
-            <span>
-              The first report is on us. Delivered to your inbox in under 2
-              minutes.
-            </span>
+            <span>The first report is on us.</span>
           </div>
 
         </section>
