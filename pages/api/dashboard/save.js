@@ -61,36 +61,29 @@ export default async function handler(req, res) {
     .eq("address", address)
     .maybeSingle();
 
-  // Auto-grant access for unlimited users
-  const { data: plan } = await supabase
-    .from("user_dashboard_plan")
-    .select("is_unlimited")
-    .eq("user_id", auth.user.id)
-    .maybeSingle();
-
+  // Saving a URL is now the trigger for free, automatic analysis. Auto-grant
+  // access in every case so the saving user can view their report immediately
+  // once the analyze step (or the existing cached report) is ready.
   let hasAccess = false;
   if (report) {
-    const { data: access } = await supabase
+    const { error: grantErr } = await supabase
       .from("report_access")
-      .select("address")
-      .eq("user_id", auth.user.id)
-      .eq("address", address)
-      .maybeSingle();
-    hasAccess = !!access;
-    if (!hasAccess && plan?.is_unlimited) {
-      const { error: grantErr } = await supabase.from("report_access").insert({
-        user_id: auth.user.id,
-        address,
-        stripe_session_id: "unlimited",
-      });
-      if (!grantErr) hasAccess = true;
-    }
+      .upsert(
+        { user_id: auth.user.id, address, stripe_session_id: "auto-save" },
+        { onConflict: "user_id,address" }
+      );
+    if (!grantErr) hasAccess = true;
+    else console.error("report_access auto-grant error:", grantErr);
   }
 
   return res.status(200).json({
     id: homeId,
     address,
+    listing_url: listing_url || null,
     report_exists: !!report,
     has_access: hasAccess,
+    // The client kicks off /api/dashboard/analyze when this is true so we
+    // can show an "Analyzing..." state on the home card.
+    analyzing: !report,
   });
 }

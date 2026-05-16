@@ -2,7 +2,11 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getSupabaseAdmin } from "../../../lib/supabase-server";
 import { SAVE_REPORT_TOOL, SYSTEM_PROMPT } from "../../../lib/report-parse-tool";
 import { normalizeAddress } from "../../../lib/extract-address";
-import { enrichReport } from "../../../lib/auto-report";
+import {
+  enrichReport,
+  buildReportRowFromAnalysis,
+  upsertReportRow,
+} from "../../../lib/auto-report";
 
 function checkAdmin(req) {
   const expected = process.env.ADMIN_PASSWORD;
@@ -73,72 +77,9 @@ export default async function handler(req, res) {
   // Run through the same enrichment as the auto-report pipeline so derived
   // financial fields are deterministic and consistent across both entry points.
   const enriched = enrichReport(extracted);
-
-  // Build the row: column fields + jsonb data blob.
-  const data = {
-    insights: enriched.insights || [],
-    script: enriched.script || "",
-    questions: enriched.questions || [],
-    comps: enriched.comps || [],
-    tiles: enriched.tiles || null,
-  };
-
-  const row = {
-    address,
-    asking_price: enriched.asking_price,
-    offer_low: enriched.offer_low,
-    offer_high: enriched.offer_high,
-    negotiability_score: enriched.negotiability_score,
-    days_on_market: enriched.days_on_market,
-    price_cuts: enriched.price_cuts,
-    zestimate_gap: enriched.zestimate_gap,
-    neighborhood: enriched.neighborhood,
-    appreciation_rate_annual: enriched.appreciation_rate_annual,
-    beds: enriched.beds,
-    baths: enriched.baths,
-    sqft: enriched.sqft,
-    lot_size_sqft: enriched.lot_size_sqft,
-    price_per_living_sqft: enriched.price_per_living_sqft,
-    price_per_lot_sqft: enriched.price_per_lot_sqft,
-    last_sold_price: enriched.last_sold_price,
-    last_sold_year: enriched.last_sold_year,
-    tax_assessed_value: enriched.tax_assessed_value,
-    annual_taxes_current: enriched.annual_taxes_current,
-    annual_taxes_projected: enriched.annual_taxes_projected,
-    hoa_monthly: enriched.hoa_monthly,
-    flood_zone: enriched.flood_zone,
-    estimated_monthly_mortgage: enriched.estimated_monthly_mortgage,
-    estimated_monthly_insurance: enriched.estimated_monthly_insurance,
-    estimated_monthly_total: enriched.estimated_monthly_total,
-    data,
-  };
-
+  const row = buildReportRowFromAnalysis(enriched, address);
   const supabase = getSupabaseAdmin();
-  let { error: upsertErr } = await supabase
-    .from("reports")
-    .upsert(row, { onConflict: "address" });
-  // If v4 columns haven't been migrated yet, postgres returns
-  // 'column "..." does not exist'. Strip the v4 fields and retry so
-  // the admin can still publish a report — they'll just lack cost data.
-  if (upsertErr && /column .* does not exist/i.test(upsertErr.message || "")) {
-    console.warn(
-      "schema-v4 columns missing — retrying upsert with legacy fields only:",
-      upsertErr.message
-    );
-    const legacy = {};
-    for (const k of [
-      "address", "asking_price", "offer_low", "offer_high",
-      "negotiability_score", "days_on_market", "price_cuts",
-      "zestimate_gap", "neighborhood", "appreciation_rate_annual",
-      "beds", "baths", "sqft", "data",
-    ]) {
-      if (row[k] !== undefined) legacy[k] = row[k];
-    }
-    const retry = await supabase
-      .from("reports")
-      .upsert(legacy, { onConflict: "address" });
-    upsertErr = retry.error;
-  }
+  const upsertErr = await upsertReportRow(supabase, row);
   if (upsertErr) {
     console.error("reports upsert:", upsertErr);
     return res.status(500).json({ error: `DB error: ${upsertErr.message}` });

@@ -156,6 +156,7 @@ export default function Dashboard() {
   const [pendingAddress, setPendingAddress] = useState(null);
   const [selectedCompare, setSelectedCompare] = useState(() => new Set());
   const [compareLimitMessage, setCompareLimitMessage] = useState(false);
+  const [analyzingSet, setAnalyzingSet] = useState(() => new Set());
 
   useEffect(() => {
     const sb = getSupabaseClient();
@@ -299,6 +300,39 @@ export default function Dashboard() {
 
   function clearCompare() { setSelectedCompare(new Set()); }
 
+  // Run the Claude web-search analysis on a freshly-saved home. Adds the
+  // home to the analyzing set so the row shows a loading badge until the
+  // analysis returns and the list refreshes.
+  async function triggerAnalyze(homeId, address, listing_url) {
+    if (!token || !homeId || !address || !listing_url) return;
+    setAnalyzingSet((prev) => {
+      const next = new Set(prev);
+      next.add(homeId);
+      return next;
+    });
+    try {
+      await fetch("/api/dashboard/analyze", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ address, listing_url }),
+      });
+    } catch (err) {
+      console.error("analyze failed:", err);
+    } finally {
+      setAnalyzingSet((prev) => {
+        const next = new Set(prev);
+        next.delete(homeId);
+        return next;
+      });
+      // Refresh regardless — Claude may have completed even if the
+      // connection dropped, since the function runs to completion server-side.
+      loadAll(token);
+    }
+  }
+
   const unlockedHomes = useMemo(() => homes.filter((h) => h.has_access && h.report), [homes]);
   const bestNeg = useMemo(() => pickBestNegotiabilityHome(unlockedHomes), [unlockedHomes]);
   const bestLivingPsf = useMemo(() => pickLowest(unlockedHomes, "price_per_living_sqft"), [unlockedHomes]);
@@ -419,9 +453,11 @@ export default function Dashboard() {
               maxSavings={maxSavings}
               psfByMarket={psfByMarket}
               selectedSet={selectedCompare}
+              analyzingSet={analyzingSet}
               onToggleCompare={toggleCompare}
               onUnlock={handleUnlock}
               onRemove={handleRemove}
+              onRetryAnalyze={triggerAnalyze}
               pendingAddress={pendingAddress}
               credits={plan.credits_remaining}
               unlimited={plan.is_unlimited}
@@ -450,7 +486,20 @@ export default function Dashboard() {
         <AddHomeModal
           token={token}
           onClose={() => setShowAdd(false)}
-          onSaved={() => { setShowAdd(false); loadAll(token); }}
+          onSaved={(saveResponse) => {
+            setShowAdd(false);
+            loadAll(token);
+            // If the saved address doesn't have a report yet, immediately
+            // kick off the Claude web-search analysis. The row will show
+            // an "Analyzing..." badge until the analysis completes.
+            if (saveResponse?.analyzing && saveResponse.id && saveResponse.listing_url) {
+              triggerAnalyze(
+                saveResponse.id,
+                saveResponse.address,
+                saveResponse.listing_url
+              );
+            }
+          }}
         />
       )}
     </>
@@ -848,9 +897,11 @@ function RankedTable({
   maxSavings,
   psfByMarket,
   selectedSet,
+  analyzingSet,
   onToggleCompare,
   onUnlock,
   onRemove,
+  onRetryAnalyze,
   pendingAddress,
   credits,
   unlimited,
@@ -889,9 +940,11 @@ function RankedTable({
                   maxSavings={maxSavings}
                   psfByMarket={psfByMarket}
                   selected={selectedSet.has(h.id)}
+                  analyzing={analyzingSet?.has(h.id)}
                   onToggleCompare={() => onToggleCompare(h.id)}
                   onUnlock={() => onUnlock(h)}
                   onRemove={() => onRemove(h.id)}
+                  onRetryAnalyze={() => onRetryAnalyze && onRetryAnalyze(h.id, h.address, h.listing_url)}
                   pending={pendingAddress === h.address}
                   credits={credits}
                   unlimited={unlimited}
@@ -907,7 +960,7 @@ function RankedTable({
 
 function RankedRow({
   home, rank, maxSavings, psfByMarket,
-  selected, onToggleCompare, onUnlock, onRemove,
+  selected, analyzing, onToggleCompare, onUnlock, onRemove, onRetryAnalyze,
   pending, credits, unlimited,
 }) {
   const r = home.report || {};
@@ -1013,6 +1066,27 @@ function RankedRow({
               <span className="rankCheckText">Compare</span>
             </label>
             <Link href={`/dashboard/${encodeAddress(home.address)}`} className="rankViewBtn">View →</Link>
+            <button type="button" className="rankRemoveBtn" onClick={onRemove} aria-label="Remove" title="Remove">×</button>
+          </div>
+        ) : analyzing ? (
+          <div className="rankActionsBox">
+            <span className="rankAnalyzingBadge" aria-live="polite">
+              <span className="rankAnalyzingSpinner" />
+              Analyzing…
+            </span>
+            <button type="button" className="rankRemoveBtn" onClick={onRemove} aria-label="Remove" title="Remove">×</button>
+          </div>
+        ) : !home.report_exists ? (
+          <div className="rankActionsBox">
+            <button
+              type="button"
+              className="rankUnlockBtn"
+              onClick={onRetryAnalyze}
+              disabled={pending || !home.listing_url}
+              title={!home.listing_url ? "Need a listing URL to re-run analysis" : "Re-run Claude analysis"}
+            >
+              Retry analysis
+            </button>
             <button type="button" className="rankRemoveBtn" onClick={onRemove} aria-label="Remove" title="Remove">×</button>
           </div>
         ) : (
@@ -1267,7 +1341,8 @@ function AddHomeModal({ token, onClose, onSaved }) {
         setSubmitting(false);
         return;
       }
-      onSaved();
+      // Pass the listing_url back so the parent can kick off /api/dashboard/analyze.
+      onSaved({ ...json, listing_url: json.listing_url || url });
     } catch (err) {
       setError("Network error.");
       setSubmitting(false);
