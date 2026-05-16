@@ -209,9 +209,12 @@ export default function Dashboard() {
     return () => sub.subscription.unsubscribe();
   }, [router]);
 
-  const loadAll = useCallback(async (tk) => {
+  // Background polls pass { silent: true } so they don't flip the loading
+  // state. Without this, every 10s poll re-renders the dashboard with a
+  // "Loading…" line above the already-populated table.
+  const loadAll = useCallback(async (tk, { silent = false } = {}) => {
     if (!tk) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const [listRes, marketRes] = await Promise.all([
         fetch("/api/dashboard/list", { headers: { Authorization: `Bearer ${tk}` } }),
@@ -225,22 +228,25 @@ export default function Dashboard() {
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
   useEffect(() => { if (token) loadAll(token); }, [token, loadAll]);
 
-  // Poll the list endpoint every 10s while any home is still pending Claude
-  // analysis. Stops automatically once nothing is in-flight. The save and
-  // analyze endpoints return immediately and run analysis in the background
-  // via waitUntil — this is how the UI picks up completion.
+  // Poll /api/dashboard/list every 10s ONLY while at least one home is
+  // mid-analysis. The instant every home reaches a terminal status
+  // ('complete' or 'failed'), the effect's cleanup clears the interval
+  // and no further polls fire. Polls pass silent=true so they don't
+  // toggle the loading state on a fully-populated dashboard.
   useEffect(() => {
     if (!token) return;
-    const hasPending = homes.some((h) => h.status === "pending");
-    if (!hasPending) return;
+    const inFlight = homes.some(
+      (h) => h.status === "pending" || h.status === "analyzing"
+    );
+    if (!inFlight) return;
     const interval = setInterval(() => {
-      loadAll(token);
+      loadAll(token, { silent: true });
     }, 10000);
     return () => clearInterval(interval);
   }, [homes, token, loadAll]);
@@ -537,7 +543,14 @@ export default function Dashboard() {
             <UpsellBanner upsell={upsell} onClick={() => startPlanCheckout(upsell.plan)} />
           )}
 
-          {loading && <div className="dashEmpty" style={{ marginBottom: 18 }}>Loading…</div>}
+          {/* Loading line only renders on the FIRST load (before any homes
+              have arrived). Once content is on screen, subsequent fetches
+              update silently — no flash above the table. */}
+          {loading && ranked.length === 0 && (
+            <div className="dashEmpty" style={{ marginBottom: 18 }}>
+              Loading…
+            </div>
+          )}
           {!loading && ranked.length === 0 && (
             <div className="dashEmpty" style={{ marginBottom: 18 }}>
               No homes yet.{" "}
