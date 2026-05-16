@@ -76,6 +76,25 @@ function scoreMessage(score) {
   return "Fresh listing. Wait for motivation signals.";
 }
 
+// Actionable "next step" prompt for the Best Deal hero card. Decision
+// matrix is driven by negotiability_score + days_on_market so users get
+// a concrete cue tied to the data they're looking at.
+function nextStepFor(score, dom) {
+  const v = Number(score);
+  const d = Number(dom);
+  if (isNaN(v)) return null;
+  if (v >= 7) {
+    return { label: "Ready to make an offer", linkLabel: "see negotiation script" };
+  }
+  if (v >= 5 && d >= 60) {
+    return { label: "Schedule a showing and monitor for price cuts", linkLabel: null };
+  }
+  if (v < 5 && d > 0 && d < 30) {
+    return { label: "Too early — add to watchlist and revisit in 30 days", linkLabel: null };
+  }
+  return null;
+}
+
 function LockIcon({ size = 12 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -180,9 +199,42 @@ function LandTooltipBody() {
 
 function dotColorForScore(score) {
   if (score == null) return "muted";
-  if (score >= 7) return "green";
-  if (score >= 5) return "amber";
+  if (score >= 6) return "green";
+  if (score >= 4) return "amber";
   return "red";
+}
+
+// Returns relative-time string for the Property cell ("3 days ago", etc.).
+function savedAgo(timestamp) {
+  if (!timestamp) return null;
+  const ms = Date.now() - new Date(timestamp).getTime();
+  if (isNaN(ms) || ms < 0) return null;
+  const days = Math.floor(ms / 86400000);
+  if (days < 1) return "today";
+  if (days === 1) return "1 day ago";
+  if (days < 30) return `${days} days ago`;
+  const months = Math.floor(days / 30);
+  if (months === 1) return "1 month ago";
+  if (months < 12) return `${months} months ago`;
+  const years = Math.floor(days / 365);
+  return years === 1 ? "1 year ago" : `${years} years ago`;
+}
+
+// Approximate fully-loaded monthly carry for any price point — used by
+// the True Monthly Cost hover tooltip to show "At $X offer / At $Y offer"
+// without storing each scenario separately on the report.
+function approxMonthly(price, opts = {}) {
+  if (!price || price <= 0) return null;
+  const hoa = Number(opts.hoa) || 0;
+  const principal = price * 0.8;
+  const rate = 0.068 / 12;
+  const n = 360;
+  const x = Math.pow(1 + rate, n);
+  const mort = Math.round((principal * rate * x) / (x - 1));
+  const tax = Math.round((price * 0.01) / 12);
+  const insRate = opts.isFlood ? 0.012 : 0.007;
+  const ins = Math.round((price * insRate) / 12);
+  return mort + tax + ins + hoa;
 }
 
 function temperatureClass(temp) {
@@ -501,7 +553,10 @@ export default function Dashboard() {
         purchasedPlan: router.query.plan,
       });
       router.replace(router.pathname, undefined, { shallow: true });
-      const t = setTimeout(() => setNotice(null), 7000);
+      // Longer timeout for "report being prepared" because the report
+      // can take 30-60s to arrive. The effect below also dismisses early
+      // the moment the report shows up in the homes list.
+      const t = setTimeout(() => setNotice(null), 60000);
       return () => clearTimeout(t);
     }
     if (router.query.canceled === "1") {
@@ -511,6 +566,20 @@ export default function Dashboard() {
       return () => clearTimeout(t);
     }
   }, [router]);
+
+  // Auto-dismiss the "report being prepared" banner the moment the
+  // report for that address actually arrives. Saves the user from
+  // staring at a stale "your report is being prepared" message after
+  // the row has already filled in.
+  useEffect(() => {
+    if (notice?.kind !== "paid" || !notice.address) return;
+    const norm = (s) => String(s || "").trim().toLowerCase();
+    const target = norm(notice.address);
+    const arrived = homes.some(
+      (h) => norm(h.address) === target && h.has_access && h.report
+    );
+    if (arrived) setNotice(null);
+  }, [homes, notice]);
 
   useEffect(() => {
     setSelectedCompare((prev) => {
@@ -838,6 +907,8 @@ export default function Dashboard() {
             <UpsellBanner upsell={upsell} onClick={() => startPlanCheckout(upsell.plan)} />
           )}
 
+          {markets.length > 0 && <MarketIntelligenceSection markets={markets} />}
+
           {/* Loading line only renders on the FIRST load (before any homes
               have arrived). Once content is on screen, subsequent fetches
               update silently — no flash above the table. */}
@@ -891,7 +962,6 @@ export default function Dashboard() {
             />
           )}
 
-          {markets.length > 0 && <MarketIntelligenceSection markets={markets} />}
         </main>
 
         {pendingRemoval && (
@@ -1040,6 +1110,27 @@ function BestDealCard({ home }) {
         <ScoreGauge score={score} />
       </div>
       {message && <div className="bestDealMessage">{message}</div>}
+      {(() => {
+        const ns = nextStepFor(score, r.days_on_market);
+        if (!ns) return null;
+        return (
+          <div className="bestDealNextStep">
+            <span className="bestDealNextStepLabel">Next step:</span>{" "}
+            <span>{ns.label}</span>
+            {ns.linkLabel && (
+              <>
+                {" — "}
+                <Link
+                  href={`/dashboard/${encodeAddress(home.address)}`}
+                  className="bestDealNextStepLink"
+                >
+                  {ns.linkLabel} →
+                </Link>
+              </>
+            )}
+          </div>
+        );
+      })()}
       <div className="bestDealSignals">
         {r.days_on_market != null && (
           <span className="bestDealSignal">
@@ -1238,8 +1329,15 @@ function TrueMonthlyCostCard({ unlockedHomes }) {
   // bar, three segments stack proportionally for mortgage / taxes /
   // insurance (and HOA if present).
   const axis = Math.max(1, max);
-  const visibleHomes = homesWithTotal.slice(0, MAX_BARS_PER_CARD);
-  const anyHasHoa = visibleHomes.some(
+
+  // Show ALL homes with reports — those without monthly totals render
+  // a "Data pending" stub row instead of being filtered out, so the
+  // card represents the user's entire list.
+  const pendingHomes = unlockedHomes.filter(
+    (h) => h.report?.estimated_monthly_total == null
+  );
+  const visibleHomes = [...homesWithTotal, ...pendingHomes];
+  const anyHasHoa = homesWithTotal.some(
     (h) => Number(h.report?.hoa_monthly) > 0
   );
 
@@ -1251,7 +1349,19 @@ function TrueMonthlyCostCard({ unlockedHomes }) {
       </div>
       <div className="monthlyBars">
         {visibleHomes.map((h) => {
-          const r = h.report;
+          const r = h.report || {};
+          // Pending stub: home has report metadata but no monthly total.
+          if (r.estimated_monthly_total == null) {
+            return (
+              <div key={h.id} className="monthlyRow monthlyRowPending">
+                <div className="monthlyMeta">
+                  <span className="monthlyAddr">{shortAddress(h.address)}</span>
+                  <span className="monthlyVal monthlyValMuted">—</span>
+                </div>
+                <div className="monthlyPendingNote">Data pending</div>
+              </div>
+            );
+          }
           const mort = Number(r.estimated_monthly_mortgage) || 0;
           const tax = (Number(r.annual_taxes_projected) || 0) / 12;
           const ins = Number(r.estimated_monthly_insurance) || 0;
@@ -1261,6 +1371,26 @@ function TrueMonthlyCostCard({ unlockedHomes }) {
           const insPct = (ins / axis) * 100;
           const hoaPct = (hoa / axis) * 100;
           const taxRisk = hasTaxRisk(r);
+          // Offer-to-monthly breakdown for the hover tooltip — recompute
+          // at offer_low and offer_high using the same assumptions so the
+          // user can see how the carry scales across the recommended range.
+          const isFlood = r.flood_zone && /^[AV]/i.test(String(r.flood_zone));
+          const lowMonthly =
+            r.offer_low != null
+              ? approxMonthly(Number(r.offer_low), { hoa, isFlood })
+              : null;
+          const highMonthly =
+            r.offer_high != null
+              ? approxMonthly(Number(r.offer_high), { hoa, isFlood })
+              : null;
+          const diff =
+            lowMonthly != null && highMonthly != null
+              ? Math.abs(highMonthly - lowMonthly)
+              : null;
+          const tooltipBody =
+            lowMonthly != null && highMonthly != null
+              ? `At ${formatMoney(Number(r.offer_low))} offer: ${formatMoney(lowMonthly)}/mo · At ${formatMoney(Number(r.offer_high))} offer: ${formatMoney(highMonthly)}/mo · Difference: ${formatMoney(diff)}/mo`
+              : `Mortgage ${formatMoney(mort)}/mo · Taxes ${formatMoney(Math.round(tax))}/mo · Insurance ${formatMoney(ins)}/mo${hoa > 0 ? ` · HOA ${formatMoney(hoa)}/mo` : ""}`;
           return (
             <div key={h.id} className="monthlyRow">
               <div className="monthlyMeta">
@@ -1277,33 +1407,29 @@ function TrueMonthlyCostCard({ unlockedHomes }) {
                 </span>
                 <span className="monthlyVal">{formatMoney(h._m)}</span>
               </div>
-              <div className="monthlyBar">
+              <div className="monthlyBar" title={tooltipBody}>
                 {mortPct > 0 && (
                   <div
                     className="monthlyBarSeg monthlySegMortgage"
                     style={{ width: `${mortPct}%` }}
-                    title={`Mortgage ${formatMoney(mort)}/mo`}
                   />
                 )}
                 {taxPct > 0 && (
                   <div
                     className="monthlyBarSeg monthlySegTax"
                     style={{ width: `${taxPct}%` }}
-                    title={`Taxes ${formatMoney(Math.round(tax))}/mo`}
                   />
                 )}
                 {insPct > 0 && (
                   <div
                     className="monthlyBarSeg monthlySegIns"
                     style={{ width: `${insPct}%` }}
-                    title={`Insurance ${formatMoney(ins)}/mo`}
                   />
                 )}
                 {hoaPct > 0 && (
                   <div
                     className="monthlyBarSeg monthlySegHoa"
                     style={{ width: `${hoaPct}%` }}
-                    title={`HOA ${formatMoney(hoa)}/mo`}
                   />
                 )}
               </div>
@@ -1396,7 +1522,6 @@ function RankedTable({
             <tr>
               <th className="rankedColRank">#</th>
               <th className="rankedColProp">Property</th>
-              <th className="rankedColNeighborhood">Neighborhood</th>
               <SortHeader label="Asking"      sortKey="asking"        activeKey={sortKey} dir={sortDir} onSort={onSort} />
               <SortHeader label="Offer range" sortKey="offer_range"   activeKey={sortKey} dir={sortDir} onSort={onSort} className="rankedColOfferRange" />
               <SortHeader label="Gap %"       sortKey="offer_gap_pct" activeKey={sortKey} dir={sortDir} onSort={onSort} className="rankedColGapPct" />
@@ -1409,7 +1534,6 @@ function RankedTable({
               <SortHeader label="Land"        sortKey="land"          activeKey={sortKey} dir={sortDir} onSort={onSort} />
               <SortHeader label="DOM"         sortKey="dom"           activeKey={sortKey} dir={sortDir} onSort={onSort} />
               <SortHeader label="Monthly"     sortKey="monthly"       activeKey={sortKey} dir={sortDir} onSort={onSort} />
-              <th>⚠</th>
               <th className="rankedColDeal">Deal</th>
               <th className="rankedColCompare">Compare</th>
               <th className="rankedColView"></th>
@@ -1462,6 +1586,16 @@ function RankedRow({
   const unlocked = home.has_access && home.report;
   const submarket = getMarketKey(r);
   const dot = unlocked ? dotColorForScore(r.negotiability_score) : "muted";
+
+  // Diagnostic: log score components per home so we can verify the
+  // weighted formula is producing the expected 1-10 range. Only logs
+  // for unlocked homes with a score_breakdown.
+  if (typeof window !== "undefined" && unlocked && r.score_breakdown) {
+    console.log(`[score:${home.address}]`, {
+      final: r.negotiability_score,
+      breakdown: r.score_breakdown,
+    });
+  }
   const ceilingRisk = unlocked && hasCeilingRisk(r);
   const ceilingFloorPct = ceilingRisk ? ceilingEstFloorPct(r) : null;
   // Deal bar tracks negotiability score directly: 9.0 → 90% width, 4.6 → 46%.
@@ -1481,28 +1615,33 @@ function RankedRow({
         {rank != null ? <span className="rankBadgeNum">#{rank}</span> : <span className="rankBadgeMuted">—</span>}
       </td>
       <td className="rankedColProp">
-        <Link href={`/dashboard/${encodeAddress(home.address)}`} className="rankAddress">
-          {home.address}
-        </Link>
-        {home.listing_url && (
-          <a
-            href={home.listing_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="rankListingLink"
-            title="Open original listing in a new tab"
-            aria-label="Open original listing"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <ExternalLinkIcon />
-          </a>
+        <div className="rankPropTop">
+          <Link href={`/dashboard/${encodeAddress(home.address)}`} className="rankAddress">
+            {home.address}
+          </Link>
+          {home.listing_url && (
+            <a
+              href={home.listing_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rankListingLink"
+              title="Open original listing in a new tab"
+              aria-label="Open original listing"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <ExternalLinkIcon />
+            </a>
+          )}
+        </div>
+        {submarket && (
+          <div className="rankPropNeighborhood">
+            <span className="rankNeighborhood">{submarket}</span>
+          </div>
         )}
-      </td>
-      <td className="rankedColNeighborhood">
-        {submarket ? (
-          <span className="rankNeighborhood">{submarket}</span>
-        ) : (
-          <span className="dashMuted">—</span>
+        {home.created_at && (
+          <div className="rankPropSaved">
+            Saved {savedAgo(home.created_at)}
+          </div>
         )}
       </td>
       <td>
@@ -1520,13 +1659,10 @@ function RankedRow({
       {unlocked && ceilingRisk ? (
         <td className="rankedColCeiling" colSpan={2}>
           <HoverTooltip title={CEILING_TOOLTIP_TITLE} body={CEILING_TOOLTIP_BODY}>
-            <span className="rankCeilingWrap">
-              <span className="rankCeilingFloor">
-                {ceilingFloorPct != null
-                  ? `~${ceilingFloorPct.toFixed(0)}% below ask`
-                  : "Est. floor"}
-              </span>
-              <span className="rankCeilingBadge">⚠ Outlier</span>
+            <span className="rankCeilingFloor">
+              {ceilingFloorPct != null
+                ? `~${ceilingFloorPct.toFixed(0)}% below ask`
+                : "Est. floor"}
             </span>
           </HoverTooltip>
         </td>
@@ -1617,22 +1753,20 @@ function RankedRow({
       </td>
       <td>
         {unlocked && r.estimated_monthly_total != null ? (
-          <span className="rankMonthly">{formatMoney(r.estimated_monthly_total)}</span>
+          <span className="rankMonthly">
+            {formatMoney(r.estimated_monthly_total)}
+            {hasTaxRisk(r) && (
+              <span
+                className="taxFlagSmall rankMonthlyTaxFlag"
+                title="Projected post-sale taxes are more than 25% above current bill"
+              >
+                ⚠
+              </span>
+            )}
+          </span>
         ) : (
           <span className="dashMuted">—</span>
         )}
-      </td>
-      <td>
-        <span className="warnStack">
-          {unlocked && hasTaxRisk(r) && (
-            <span className="taxFlagSmall" title="Projected post-sale taxes are more than 25% above current bill">⚠</span>
-          )}
-          {unlocked && offerRangeFlagged(r) && (
-            <span className="verifyFlagSmall" title={offerRangeFlagNote(r)}>
-              ⚠ Verify
-            </span>
-          )}
-        </span>
       </td>
       <td className="rankedColDeal">
         {unlocked && negScore != null && !isNaN(negScore) ? (
