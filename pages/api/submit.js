@@ -9,9 +9,9 @@ import { renderReportPDF } from "../../lib/report-pdf";
 import { sendReportEmail } from "../../lib/email";
 
 // Vercel: allow this function to run long enough for Claude + PDF + email.
-// Hobby caps at 10s; this requires Pro (max 800s).
+// Pro plan supports up to 300s; matches the dashboard analysis routes.
 export const config = {
-  maxDuration: 120,
+  maxDuration: 300,
 };
 
 async function fulfillReport({ listing_url, email }) {

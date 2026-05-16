@@ -975,20 +975,10 @@ function ValueBreakdownCard({ unlockedHomes, psfByMarket }) {
   return (
     <AnswerCardShell kicker="Value Breakdown">
       {livingHomes.length > 0 && (
-        <ValueBarSection
-          label="$/sqft living"
-          homes={livingHomes}
-          psfKey="living"
-          psfByMarket={psfByMarket}
-        />
+        <ValueBarSection label="$/sqft living" homes={livingHomes} />
       )}
       {lotHomes.length > 0 && (
-        <ValueBarSection
-          label="$/sqft lot"
-          homes={lotHomes}
-          psfKey="lot"
-          psfByMarket={psfByMarket}
-        />
+        <ValueBarSection label="$/sqft lot" homes={lotHomes} />
       )}
       <a href="#ranked-homes" className="answerLink valueFullLink">
         Full breakdown →
@@ -997,31 +987,21 @@ function ValueBreakdownCard({ unlockedHomes, psfByMarket }) {
   );
 }
 
-// Per-home bar list mirroring Card 3 (True Monthly Cost) visually: each
-// row is address + horizontal bar + value. Bar fill width is scaled
-// against the home's submarket avg — parity = 50%, below-avg = wider
-// green, above-avg = shorter slate.
-function ValueBarSection({ label, homes, psfKey, psfByMarket }) {
+// Per-home bar list comparing $/sqft WITHIN the user's list: cheapest gets
+// the fullest green bar, most expensive gets the shortest gray bar. Bars
+// scale linearly by (min / value). Color split at the price midpoint so
+// the cheaper half reads green and the pricier half reads slate.
+function ValueBarSection({ label, homes }) {
+  const min = homes[0]._v;
+  const max = homes[homes.length - 1]._v;
+  const midpoint = (min + max) / 2;
   return (
     <div className="valueBarSection">
       <div className="valueSectionLabel">{label}</div>
       <div className="valueBarRows">
         {homes.map((h) => {
-          const submarket = getMarketKey(h.report);
-          const entry = submarket && psfByMarket ? psfByMarket.get(submarket) : null;
-          const avg = entry ? entry[psfKey] : null;
-          let pct;
-          let below;
-          if (avg && avg > 0) {
-            const ratio = h._v / avg;
-            pct = Math.max(10, Math.min(100, Math.round(50 + (1 - ratio) * 50)));
-            below = h._v <= avg;
-          } else {
-            // No submarket benchmark — assume the cheapest is winning.
-            const min = homes[0]._v;
-            pct = Math.max(10, Math.round((min / h._v) * 100));
-            below = h.id === homes[0].id;
-          }
+          const pct = Math.max(10, Math.min(100, Math.round((min / h._v) * 100)));
+          const below = h._v <= midpoint;
           return (
             <div key={h.id} className="monthlyRow">
               <div className="monthlyMeta">
@@ -1043,11 +1023,6 @@ function ValueBarSection({ label, homes, psfKey, psfByMarket }) {
     </div>
   );
 }
-
-// Each bar is scaled against THIS home's submarket avg, not against the
-// other homes on the list. A home priced at the neighborhood average gets
-// a 50% bar. Below avg = longer, fuller green bar (better value). Above
-// avg = shorter, lighter bar (worse value).
 
 /* ===================== CARD 3 — TRUE MONTHLY COST ===================== */
 
@@ -1359,9 +1334,11 @@ function RankedRow({
   const unlocked = home.has_access && home.report;
   const submarket = getMarketKey(r);
   const dot = unlocked ? dotColorForScore(r.negotiability_score) : "muted";
+  // Deal bar tracks negotiability score directly: 9.0 → 90% width, 4.6 → 46%.
+  const negScore = unlocked ? Number(r.negotiability_score) : null;
   const dealPct =
-    unlocked && home.savings && maxSavings
-      ? Math.max(2, Math.round((home.savings / maxSavings) * 100))
+    negScore != null && !isNaN(negScore)
+      ? Math.max(2, Math.min(100, Math.round(negScore * 10)))
       : 0;
   const marketPsf = unlocked && submarket ? psfByMarket.get(submarket) : null;
   const psf = unlocked ? Number(r.price_per_living_sqft) : null;
@@ -1498,8 +1475,8 @@ function RankedRow({
         </span>
       </td>
       <td className="rankedColDeal">
-        {unlocked && home.savings ? (
-          <div className="dealBar" title={`${dealPct}% of top deal`} aria-label={`Deal strength ${dealPct} percent of top deal`}>
+        {unlocked && negScore != null && !isNaN(negScore) ? (
+          <div className="dealBar" title={`Negotiability ${negScore.toFixed(1)}/10`} aria-label={`Negotiability score ${negScore} out of 10`}>
             <div className="dealBarFill" style={{ width: `${dealPct}%` }} />
           </div>
         ) : (
