@@ -476,6 +476,50 @@ input {
   color: var(--navy);
 }
 
+.insights {
+  padding: 0 18px;
+  margin: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.insight {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--blue-light);
+  border-left: 3px solid var(--blue);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.insightNum {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--blue);
+  color: var(--white);
+  font-size: 12px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 1px;
+}
+
+.insightBody {
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--navy);
+}
+
+.insightBody strong {
+  color: var(--navy);
+}
+
 .scriptBox {
   margin: 16px 18px 8px;
   background: var(--blue-light);

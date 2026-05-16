@@ -277,24 +277,44 @@ export default function Home() {
             </div>
           </div>
 
-          <h2 className="sectionH">Why This Number</h2>
-          <div className="beats">
-            <div className="beat">
-              <strong>Closed comps say $1.78M&ndash;$1.85M.</strong> Five nearby
-              4-bed sales in the last 6 months landed at $682&ndash;$720/sqft &mdash;
-              this listing is priced at $764/sqft.
-            </div>
-            <div className="beat">
-              <strong>Time is on your side.</strong> 136 days on market is more
-              than 3&times; the neighborhood median. After two cuts, the seller
-              has already signaled flexibility.
-            </div>
-            <div className="beat">
-              <strong>The Zestimate agrees.</strong> Zillow pegs fair value at
-              $1.885M &mdash; $110K below ask. A mid-$1.8s offer lands inside the
-              algorithm&rsquo;s confidence band.
-            </div>
-          </div>
+          <h2 className="sectionH">What the Data Tells You</h2>
+          <ol className="insights">
+            <li className="insight">
+              <span className="insightNum">1</span>
+              <div className="insightBody">
+                <strong>Closed comps say $1.78M&ndash;$1.85M.</strong> Five
+                nearby 4-bed sales in the last 6 months landed at
+                $682&ndash;$720/sqft &mdash; this listing is priced at
+                $764/sqft, roughly 9% above the comp band.
+              </div>
+            </li>
+            <li className="insight">
+              <span className="insightNum">2</span>
+              <div className="insightBody">
+                <strong>Time is on your side.</strong> 136 days on market is
+                more than 3&times; the 41-day neighborhood median. After two
+                cuts totaling $155K, the seller has already signaled clear
+                flexibility.
+              </div>
+            </li>
+            <li className="insight">
+              <span className="insightNum">3</span>
+              <div className="insightBody">
+                <strong>The Zestimate agrees.</strong> Zillow pegs fair value
+                at $1.885M &mdash; $110K below ask. A mid-$1.8s offer lands
+                comfortably inside the algorithm&rsquo;s confidence band.
+              </div>
+            </li>
+            <li className="insight">
+              <span className="insightNum">4</span>
+              <div className="insightBody">
+                <strong>Negotiability score is 8.2/10.</strong> Long DOM, two
+                price cuts, a Zestimate gap, and softening neighborhood demand
+                all point to a seller who will engage on a sub-ask offer
+                rather than wait for another buyer.
+              </div>
+            </li>
+          </ol>
 
           <h2 className="sectionH">Negotiation Script</h2>
           <div className="scriptBox">
@@ -305,7 +325,7 @@ export default function Home() {
             number that works for both sides.&rdquo;
           </div>
 
-          <h2 className="sectionH">3 Questions to Ask</h2>
+          <h2 className="sectionH">3 Questions to Ask the Listing Agent</h2>
           <ol className="questions">
             <li>
               <span className="qNum">1</span>
@@ -331,6 +351,7 @@ export default function Home() {
                   <th>Sqft</th>
                   <th>Sold</th>
                   <th>$/Sqft</th>
+                  <th>DOM</th>
                 </tr>
               </thead>
               <tbody>
@@ -340,6 +361,7 @@ export default function Home() {
                   <td className="num">2,540</td>
                   <td className="num">$1,820K</td>
                   <td className="num">$717</td>
+                  <td className="num">42</td>
                 </tr>
                 <tr>
                   <td>518 27th St</td>
@@ -347,6 +369,7 @@ export default function Home() {
                   <td className="num">2,610</td>
                   <td className="num">$1,795K</td>
                   <td className="num">$688</td>
+                  <td className="num">58</td>
                 </tr>
                 <tr>
                   <td>329 28th St</td>
@@ -354,6 +377,7 @@ export default function Home() {
                   <td className="num">2,720</td>
                   <td className="num">$1,855K</td>
                   <td className="num">$682</td>
+                  <td className="num">71</td>
                 </tr>
                 <tr>
                   <td>624 26th St</td>
@@ -361,6 +385,7 @@ export default function Home() {
                   <td className="num">2,820</td>
                   <td className="num">$1,925K</td>
                   <td className="num">$683</td>
+                  <td className="num">39</td>
                 </tr>
                 <tr>
                   <td>207 30th St</td>
@@ -368,6 +393,7 @@ export default function Home() {
                   <td className="num">2,480</td>
                   <td className="num">$1,785K</td>
                   <td className="num">$720</td>
+                  <td className="num">33</td>
                 </tr>
               </tbody>
             </table>
