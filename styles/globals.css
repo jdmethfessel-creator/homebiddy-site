@@ -2959,6 +2959,79 @@ input {
   line-height: 1.4;
 }
 
+/* ============================================================================
+   Score-breakdown tables on /dashboard/[address]
+   ============================================================================ */
+.dashBreakdownSection {
+  margin-top: 28px;
+}
+.dashBreakdownWrap {
+  border: 1px solid var(--dash-border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--dash-surface);
+}
+.dashBreakdownTable {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13.5px;
+  color: var(--dash-ink);
+}
+.dashBreakdownTable thead th {
+  background: var(--dash-blue-50);
+  color: var(--dash-muted);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 10.5px;
+  padding: 10px 14px;
+  text-align: left;
+}
+.dashBreakdownNum {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums;
+}
+.dashBreakdownTable tbody td {
+  padding: 11px 14px;
+  border-top: 1px solid var(--dash-border);
+  vertical-align: top;
+  line-height: 1.45;
+}
+.dashBreakdownName {
+  font-weight: 600;
+  color: var(--dash-ink);
+}
+.dashBreakdownScore {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 700;
+  color: var(--dash-blue-700);
+  white-space: nowrap;
+}
+.dashBreakdownNote {
+  color: var(--dash-muted);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.dashBreakdownEmpty {
+  color: var(--dash-border);
+}
+.dashBreakdownTotal td {
+  background: var(--dash-blue-50);
+  font-weight: 700;
+  border-top: 1.5px solid var(--dash-blue-200);
+}
+.dashBreakdownTotal td:first-child {
+  color: var(--dash-blue-900);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+}
+.dashBreakdownTotal .dashBreakdownScore {
+  color: var(--dash-blue-900);
+  font-size: 15px;
+}
+
 /* Retry button on rows where analysis failed all retries */
 .rankUnlockBtnFailed {
   background: #FEF3C7;

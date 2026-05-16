@@ -123,62 +123,25 @@ function HoverTooltip({ children, title, body }) {
   );
 }
 
-function ScoreTooltipBody({ breakdown, score }) {
+// Tooltips show methodology only — the full breakdown lives on the
+// /dashboard/[address] detail page so users get the "what" on hover and
+// the "how" when they click in.
+function ScoreTooltipBody() {
   return (
-    <div>
-      <div className="hoverTooltipLead">
-        Negotiability is how much room you have to negotiate (1–10). It&rsquo;s
-        a weighted average of four signals.
-      </div>
-      {breakdown && typeof breakdown === "object" ? (
-        <ul className="hoverTooltipList">
-          {breakdown.dom_score != null && (
-            <li>
-              <span>Days on market</span>
-              <strong>{formatScore(breakdown.dom_score)}/10</strong>
-            </li>
-          )}
-          {breakdown.price_cut_score != null && (
-            <li>
-              <span>Price cuts</span>
-              <strong>{formatScore(breakdown.price_cut_score)}/10</strong>
-            </li>
-          )}
-          {breakdown.zestimate_gap_score != null && (
-            <li>
-              <span>Zestimate gap</span>
-              <strong>{formatScore(breakdown.zestimate_gap_score)}/10</strong>
-            </li>
-          )}
-          {breakdown.price_per_sqft_score != null && (
-            <li>
-              <span>$/sqft vs comps</span>
-              <strong>{formatScore(breakdown.price_per_sqft_score)}/10</strong>
-            </li>
-          )}
-        </ul>
-      ) : (
-        <div className="hoverTooltipNote">
-          Sub-component breakdown isn&rsquo;t available for this report.
-        </div>
-      )}
+    <div className="hoverTooltipLead">
+      Negotiability Score (1–10). Weighted across 5 signals: days on market,
+      price history, $/sqft vs closed comps, Zestimate gap, and listing
+      language. Higher = more room to negotiate.
     </div>
   );
 }
 
-function LandTooltipBody({ notes }) {
+function LandTooltipBody() {
   return (
-    <div>
-      <div className="hoverTooltipLead">
-        Land arbitrage scores the property as a land play (1–10): lot value
-        per sqft vs the neighborhood, lot size vs median, structure condition,
-        and renovation / ADU upside.
-      </div>
-      {notes ? (
-        <div className="hoverTooltipNote">{notes}</div>
-      ) : (
-        <div className="hoverTooltipNote">No specific notes for this property.</div>
-      )}
+    <div className="hoverTooltipLead">
+      Land Arbitrage (1–10). Weighted across 4 signals: lot $/sqft vs
+      neighborhood median, lot size vs median, structure condition, and
+      renovation / ADU upside. Higher = better land play.
     </div>
   );
 }
@@ -1479,12 +1442,7 @@ function RankedRow({
         {unlocked ? (
           <HoverTooltip
             title="Negotiability score"
-            body={
-              <ScoreTooltipBody
-                breakdown={r.score_breakdown}
-                score={r.negotiability_score}
-              />
-            }
+            body={<ScoreTooltipBody />}
           >
             <span className="rankScore">
               <span className={`scoreDot scoreDot_${dot}`} />
@@ -1499,7 +1457,7 @@ function RankedRow({
         {unlocked && r.land_arbitrage_score != null ? (
           <HoverTooltip
             title="Land arbitrage"
-            body={<LandTooltipBody notes={r.land_arbitrage_notes} />}
+            body={<LandTooltipBody />}
           >
             <span className="rankScore">
               <span className={`scoreDot scoreDot_${landDotColor(r.land_arbitrage_score)}`} />

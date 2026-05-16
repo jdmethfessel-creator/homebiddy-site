@@ -235,12 +235,156 @@ export default function HomeReport() {
                   <Tile label="Median DOM" value={reportData.tiles.median_dom} />
                 </div>
               )}
+
+              <NegotiabilityBreakdown report={report} />
+              <LandBreakdown report={report} />
             </article>
           )}
         </main>
       </div>
     </>
   );
+}
+
+// ============== Score-breakdown tables shown at bottom of the page ==============
+
+function NegotiabilityBreakdown({ report }) {
+  const bd = report?.score_breakdown;
+  if (!bd || typeof bd !== "object") return null;
+  // Definition with both new and legacy field names so older rows still
+  // render. Each entry shows a label + weight + score + 'why' explanation.
+  const defs = [
+    {
+      name: "Days on market",
+      weight: "25%",
+      scoreKey: "dom_score",
+      noteKey: "dom_note",
+      legacyScoreKey: null,
+    },
+    {
+      name: "Price history",
+      weight: "20%",
+      scoreKey: "price_history_score",
+      noteKey: "price_history_note",
+      legacyScoreKey: "price_cut_score",
+    },
+    {
+      name: "$/sqft vs closed comps",
+      weight: "25%",
+      scoreKey: "comp_psf_score",
+      noteKey: "comp_psf_note",
+      legacyScoreKey: "price_per_sqft_score",
+    },
+    {
+      name: "Zestimate gap",
+      weight: "15%",
+      scoreKey: "zestimate_gap_score",
+      noteKey: "zestimate_gap_note",
+      legacyScoreKey: null,
+    },
+    {
+      name: "Listing language",
+      weight: "15%",
+      scoreKey: "listing_signals_score",
+      noteKey: "listing_signals_note",
+      legacyScoreKey: null,
+    },
+  ];
+  const rows = defs
+    .map((d) => {
+      const score =
+        bd[d.scoreKey] != null
+          ? bd[d.scoreKey]
+          : d.legacyScoreKey && bd[d.legacyScoreKey] != null
+          ? bd[d.legacyScoreKey]
+          : null;
+      return {
+        name: d.name,
+        weight: d.weight,
+        score,
+        note: bd[d.noteKey] || null,
+      };
+    })
+    .filter((r) => r.score != null);
+  if (rows.length === 0) return null;
+  return (
+    <section className="dashBreakdownSection">
+      <h2 className="dashH2">How your negotiability score was calculated</h2>
+      <BreakdownTable rows={rows} total={report.negotiability_score} totalLabel="Final score" />
+    </section>
+  );
+}
+
+function LandBreakdown({ report }) {
+  const bd = report?.data?.land_score_breakdown;
+  if (!bd || typeof bd !== "object") return null;
+  const defs = [
+    { name: "Lot $/sqft vs neighborhood median", weight: "30%", scoreKey: "lot_psf_score", noteKey: "lot_psf_note" },
+    { name: "Lot size vs median", weight: "25%", scoreKey: "lot_size_score", noteKey: "lot_size_note" },
+    { name: "Structure condition", weight: "25%", scoreKey: "condition_score", noteKey: "condition_note" },
+    { name: "Renovation / ADU upside", weight: "20%", scoreKey: "upside_score", noteKey: "upside_note" },
+  ];
+  const rows = defs
+    .map((d) => ({
+      name: d.name,
+      weight: d.weight,
+      score: bd[d.scoreKey] != null ? bd[d.scoreKey] : null,
+      note: bd[d.noteKey] || null,
+    }))
+    .filter((r) => r.score != null);
+  if (rows.length === 0) return null;
+  return (
+    <section className="dashBreakdownSection">
+      <h2 className="dashH2">How your land arbitrage score was calculated</h2>
+      <BreakdownTable rows={rows} total={report.land_arbitrage_score} totalLabel="Final score" />
+    </section>
+  );
+}
+
+function BreakdownTable({ rows, total, totalLabel }) {
+  return (
+    <div className="dashBreakdownWrap">
+      <table className="dashBreakdownTable">
+        <thead>
+          <tr>
+            <th>Signal</th>
+            <th className="dashBreakdownNum">Weight</th>
+            <th className="dashBreakdownNum">Score</th>
+            <th>Why</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i}>
+              <td className="dashBreakdownName">{r.name}</td>
+              <td className="dashBreakdownNum">{r.weight}</td>
+              <td className="dashBreakdownNum dashBreakdownScore">
+                {formatBreakdownScore(r.score)}/10
+              </td>
+              <td className="dashBreakdownNote">
+                {r.note || <span className="dashBreakdownEmpty">—</span>}
+              </td>
+            </tr>
+          ))}
+          {total != null && (
+            <tr className="dashBreakdownTotal">
+              <td colSpan="2">{totalLabel}</td>
+              <td className="dashBreakdownNum dashBreakdownScore">
+                {formatBreakdownScore(total)}/10
+              </td>
+              <td></td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function formatBreakdownScore(n) {
+  if (n == null || isNaN(Number(n))) return "—";
+  const v = Number(n);
+  return Number.isInteger(v) ? String(v) : v.toFixed(1);
 }
 
 function Stat({ label, value, hint }) {

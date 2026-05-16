@@ -85,7 +85,7 @@ insert into public.reports (
   data
 ) values (
   '442 28th St, West Palm Beach FL 33407',
-  1995000, 1780000, 1850000, 8.2,
+  1995000, 1780000, 1850000, 6.9,
   136, 2, 110000, 'Old Northwood',
   0.038, 4, 3, 2610,
   7500, 764.37, 266.00,
@@ -96,10 +96,16 @@ insert into public.reports (
   7.4,
   'Standard lot, 1989 build, motivated seller, renovation upside',
   jsonb_build_object(
-    'dom_score', 9,
-    'price_cut_score', 8,
-    'zestimate_gap_score', 8,
-    'price_per_sqft_score', 7
+    'dom_score', 10,
+    'dom_note', '136 days vs 41-day neighborhood avg = 3.3× average',
+    'price_history_score', 4,
+    'price_history_note', 'Two cuts totaling $155K, no relisting',
+    'comp_psf_score', 7,
+    'comp_psf_note', '$764/sqft vs $702 comp avg = 9% above',
+    'zestimate_gap_score', 7,
+    'zestimate_gap_note', 'Asking 5.8% over Zestimate ($1.995M vs $1.885M)',
+    'listing_signals_score', 5,
+    'listing_signals_note', 'Neutral language; no specific keywords detected'
   ),
   jsonb_build_object(
     'insights', jsonb_build_array(
@@ -126,7 +132,18 @@ insert into public.reports (
       'comp_median_sale', 1830000,
       'suggested_under_ask_pct', 7.5,
       'median_dom', 41
-    )
+    ),
+    'land_score_breakdown', jsonb_build_object(
+      'lot_psf_score', 8,
+      'lot_psf_note', '$266/sqft lot — below Old Northwood median',
+      'lot_size_score', 6,
+      'lot_size_note', '7,500 sqft — slightly above area median',
+      'condition_score', 8,
+      'condition_note', '1989 build with 136 DOM signals renovation play',
+      'upside_score', 7,
+      'upside_note', 'Standard lot allows expansion / ADU'
+    ),
+    'relisted', false
   )
 ) on conflict (address) do update set
   asking_price = excluded.asking_price,
