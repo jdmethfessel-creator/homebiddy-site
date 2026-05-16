@@ -674,25 +674,18 @@ export default function Dashboard() {
     loadAll(token);
   }
 
-  // User-triggered refresh on an already-unlocked row. Deletes the existing
-  // reports row + this user's report_access row server-side, then re-runs
-  // Claude end-to-end. Uses an optimistic UI update so the row shows the
-  // Analyzing... spinner immediately — without it, the user would stare at
-  // stale data until loadAll() returns.
+  // User-triggered refresh on an already-unlocked row. No confirm dialog —
+  // the prior version's window.confirm was being dismissed in some cases
+  // and silently swallowing the click. The optimistic UI update flips the
+  // row to pending immediately so the Analyzing... spinner shows on click.
   async function triggerReanalyze(homeId, address, listing_url) {
-    if (!token || !homeId || !address) return;
-    if (
-      typeof window !== "undefined" &&
-      !window.confirm(
-        "Re-run analysis for this home? Existing report data will be replaced."
-      )
-    ) {
+    console.log("[reanalyze] click", { homeId, address, listing_url, hasToken: !!token });
+    if (!token || !homeId || !address) {
+      console.warn("[reanalyze] missing inputs, aborting");
       return;
     }
 
-    // Optimistic: flip the row into pending state right now so the
-    // Analyzing... spinner appears the instant the user confirms. loadAll()
-    // below will overwrite with the authoritative server state.
+    // Optimistic update — row visibly flips into Analyzing state on click.
     setHomes((prev) =>
       prev.map((h) =>
         h.id === homeId
@@ -710,6 +703,7 @@ export default function Dashboard() {
 
     let serverError = null;
     try {
+      console.log("[reanalyze] POST /api/dashboard/reanalyze", { address, listing_url });
       const r = await fetch("/api/dashboard/reanalyze", {
         method: "POST",
         headers: {
@@ -718,13 +712,13 @@ export default function Dashboard() {
         },
         body: JSON.stringify({ address, listing_url }),
       });
+      const j = await r.json().catch(() => ({}));
+      console.log("[reanalyze] response", r.status, j);
       if (!r.ok) {
-        const j = await r.json().catch(() => ({}));
-        console.error("reanalyze: server returned", r.status, j);
         serverError = j.error || `Re-analysis request failed (${r.status})`;
       }
     } catch (err) {
-      console.error("reanalyze trigger failed:", err);
+      console.error("[reanalyze] network error:", err);
       serverError = "Network error. Please try again.";
     }
 
