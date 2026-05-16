@@ -1296,7 +1296,7 @@ function BestDealCard({ home }) {
 
 /* ===================== CARD 2 — VALUE BREAKDOWN with race bars ===================== */
 
-function ValueBreakdownCard({ unlockedHomes }) {
+function ValueBreakdownCard({ unlockedHomes, psfByMarket }) {
   if (unlockedHomes.length === 0) {
     return (
       <EmptyAnswerCard
@@ -1347,6 +1347,17 @@ function ValueBreakdownCard({ unlockedHomes }) {
     );
   }
 
+  // Look up neighborhood avg psf for each winner so bars scale relative
+  // to the market rather than rendering full-width.
+  const livingMarket =
+    livingWinner && psfByMarket
+      ? psfByMarket.get(getMarketKey(livingWinner.home.report))?.living
+      : null;
+  const lotMarket =
+    lotWinner && psfByMarket
+      ? psfByMarket.get(getMarketKey(lotWinner.home.report))?.lot
+      : null;
+
   return (
     <AnswerCardShell kicker="Value Breakdown">
       {livingWinner && (
@@ -1354,6 +1365,7 @@ function ValueBreakdownCard({ unlockedHomes }) {
           label="$/sqft living"
           home={livingWinner.home}
           value={`$${Math.round(livingWinner.v).toLocaleString()}`}
+          {...psfBar(livingWinner.v, livingMarket)}
         />
       )}
       {lotWinner && (
@@ -1361,6 +1373,7 @@ function ValueBreakdownCard({ unlockedHomes }) {
           label="$/sqft lot"
           home={lotWinner.home}
           value={`$${Math.round(lotWinner.v).toLocaleString()}`}
+          {...psfBar(lotWinner.v, lotMarket)}
         />
       )}
       {landWinner && (
@@ -1368,6 +1381,8 @@ function ValueBreakdownCard({ unlockedHomes }) {
           label="Land play"
           home={landWinner.home}
           value={`${formatFinalScore(landWinner.v)}/10`}
+          pct={Math.max(5, Math.min(100, Math.round((landWinner.v / 10) * 100)))}
+          below={true}
         />
       )}
       <a href="#ranked-homes" className="answerLink valueFullLink">
@@ -1377,10 +1392,20 @@ function ValueBreakdownCard({ unlockedHomes }) {
   );
 }
 
-// One stat row per category: label, the winning address, the value as
-// a green full bar. Mirrors the layout of the True Monthly Cost rows
-// so all three cards read consistently.
-function ValueWinnerRow({ label, home, value }) {
+// Scale a $/sqft bar against the neighborhood average. Winner $590 vs
+// $787 avg → 75% bar. Below avg = green; at-or-above avg = slate.
+// Falls back to a 50% neutral bar when no submarket avg exists.
+function psfBar(winnerValue, marketAvg) {
+  if (!marketAvg || marketAvg <= 0) {
+    return { pct: 50, below: true };
+  }
+  const ratio = winnerValue / marketAvg;
+  const pct = Math.max(5, Math.min(100, Math.round(ratio * 100)));
+  return { pct, below: winnerValue <= marketAvg };
+}
+
+// One stat row per category: label, value, address, proportional bar.
+function ValueWinnerRow({ label, home, value, pct, below }) {
   return (
     <div className="valueWinnerRow">
       <div className="valueWinnerMeta">
@@ -1389,7 +1414,10 @@ function ValueWinnerRow({ label, home, value }) {
       </div>
       <div className="valueWinnerAddr">{shortAddress(home.address)}</div>
       <div className="monthlyBar">
-        <div className="monthlyBarSeg valueSegBelow" style={{ width: "100%" }} />
+        <div
+          className={`monthlyBarSeg ${below ? "valueSegBelow" : "valueSegAbove"}`}
+          style={{ width: `${pct}%` }}
+        />
       </div>
     </div>
   );
@@ -1853,17 +1881,16 @@ function RankedRow({
         )}
       </td>
       <td className="rankedColGapPct">
-        {unlocked && ceilingRisk ? (
-          <HoverTooltip title={CEILING_TOOLTIP_TITLE} body={CEILING_TOOLTIP_BODY}>
-            <span className="rankCeilingFloor">
-              {ceilingFloorPct != null
-                ? `~${ceilingFloorPct.toFixed(0)}% below ask`
-                : "Est. floor"}
+        {unlocked && home.savings != null && r.asking_price ? (
+          <span className="rankGapWrap">
+            <span className="rankGapPctSolo">
+              {((home.savings / r.asking_price) * 100).toFixed(0)}%
             </span>
-          </HoverTooltip>
-        ) : unlocked && home.savings != null && r.asking_price ? (
-          <span className="rankGapPctSolo">
-            {((home.savings / r.asking_price) * 100).toFixed(1)}%
+            {ceilingRisk && (
+              <HoverTooltip title={CEILING_TOOLTIP_TITLE} body={CEILING_TOOLTIP_BODY}>
+                <span className="rankGapOutlier" aria-label="Renovated outlier — comp gap may not reflect a realistic floor">ⓘ</span>
+              </HoverTooltip>
+            )}
           </span>
         ) : (
           <span className="dashBlur">XX%</span>

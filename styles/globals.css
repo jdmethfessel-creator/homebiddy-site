@@ -2795,15 +2795,20 @@ input {
   font-style: italic;
 }
 
-/* Value Breakdown — single-winner rows. */
+/* Value Breakdown — single-winner rows. Compact spacing so all three
+   rows + the Full breakdown link fit in the same height as the other
+   two answer cards. */
 .valueWinnerRow {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 8px 0;
+  gap: 3px;
+  padding: 6px 0;
   border-bottom: 1px solid var(--dash-border);
 }
-.valueWinnerRow:last-of-type { border-bottom: none; }
+.valueWinnerRow:last-of-type {
+  border-bottom: none;
+  padding-bottom: 2px;
+}
 .valueWinnerMeta {
   display: flex;
   justify-content: space-between;
@@ -3749,6 +3754,20 @@ input {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+/* Gap % cell — percentage + (optional) amber outlier ⓘ. */
+.rankGapWrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.rankGapOutlier {
+  color: #B45309;
+  font-size: 11px;
+  cursor: help;
+  line-height: 1;
+}
+.rankGapOutlier:hover { color: #92400E; }
 
 /* Renovated-outlier cell — spans the GAP %/GAP $ pair in the ranked row. */
 .rankedColCeiling {
