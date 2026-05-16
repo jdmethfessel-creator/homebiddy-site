@@ -96,6 +96,16 @@ function RefreshIcon({ size = 13 }) {
   );
 }
 
+function ExternalLinkIcon({ size = 11 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+      <polyline points="15 3 21 3 21 9" />
+      <line x1="10" y1="14" x2="21" y2="3" />
+    </svg>
+  );
+}
+
 // Hover tooltip rendered via a React portal so the bubble can escape the
 // table's overflow-clipped scroll container. Positioned above the trigger
 // with a fixed-position bubble anchored to the trigger's bounding rect.
@@ -665,8 +675,10 @@ export default function Dashboard() {
   }
 
   // User-triggered refresh on an already-unlocked row. Deletes the existing
-  // reports row server-side and re-runs Claude end-to-end. Mirrors the
-  // pending-status polling flow used by save/analyze.
+  // reports row + this user's report_access row server-side, then re-runs
+  // Claude end-to-end. Uses an optimistic UI update so the row shows the
+  // Analyzing... spinner immediately — without it, the user would stare at
+  // stale data until loadAll() returns.
   async function triggerReanalyze(homeId, address, listing_url) {
     if (!token || !homeId || !address) return;
     if (
@@ -677,8 +689,28 @@ export default function Dashboard() {
     ) {
       return;
     }
+
+    // Optimistic: flip the row into pending state right now so the
+    // Analyzing... spinner appears the instant the user confirms. loadAll()
+    // below will overwrite with the authoritative server state.
+    setHomes((prev) =>
+      prev.map((h) =>
+        h.id === homeId
+          ? {
+              ...h,
+              status: "pending",
+              report: null,
+              report_exists: false,
+              has_access: false,
+              last_error: null,
+            }
+          : h
+      )
+    );
+
+    let serverError = null;
     try {
-      await fetch("/api/dashboard/reanalyze", {
+      const r = await fetch("/api/dashboard/reanalyze", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -686,8 +718,18 @@ export default function Dashboard() {
         },
         body: JSON.stringify({ address, listing_url }),
       });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        console.error("reanalyze: server returned", r.status, j);
+        serverError = j.error || `Re-analysis request failed (${r.status})`;
+      }
     } catch (err) {
       console.error("reanalyze trigger failed:", err);
+      serverError = "Network error. Please try again.";
+    }
+
+    if (serverError && typeof window !== "undefined") {
+      window.alert(serverError);
     }
     loadAll(token);
   }
@@ -1448,6 +1490,19 @@ function RankedRow({
         <Link href={`/dashboard/${encodeAddress(home.address)}`} className="rankAddress">
           {home.address}
         </Link>
+        {home.listing_url && (
+          <a
+            href={home.listing_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rankListingLink"
+            title="Open original listing in a new tab"
+            aria-label="Open original listing"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <ExternalLinkIcon />
+          </a>
+        )}
       </td>
       <td className="rankedColNeighborhood">
         {submarket ? (

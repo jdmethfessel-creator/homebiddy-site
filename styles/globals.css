@@ -2784,6 +2784,23 @@ input {
 }
 .rankAddress:hover { color: var(--dash-blue-700); }
 
+/* Small ↗ icon next to the address — opens listing_url in a new tab. */
+.rankListingLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 6px;
+  padding: 2px;
+  color: var(--dash-muted);
+  border-radius: 3px;
+  transition: color 0.15s ease, background 0.15s ease;
+  vertical-align: middle;
+}
+.rankListingLink:hover {
+  color: var(--dash-blue-700);
+  background: var(--dash-blue-50);
+}
+
 .rankBadge {
   display: inline-block;
   margin-left: 8px;
