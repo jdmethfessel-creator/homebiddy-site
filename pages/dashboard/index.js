@@ -1191,10 +1191,21 @@ function TrueMonthlyCostCard({ unlockedHomes }) {
           const taxPct = (tax / axis) * 100;
           const insPct = (ins / axis) * 100;
           const hoaPct = (hoa / axis) * 100;
+          const taxRisk = hasTaxRisk(r);
           return (
             <div key={h.id} className="monthlyRow">
               <div className="monthlyMeta">
-                <span className="monthlyAddr">{shortAddress(h.address)}</span>
+                <span className="monthlyAddr">
+                  {shortAddress(h.address)}
+                  {taxRisk && (
+                    <span
+                      className="monthlyAddrFlag"
+                      title={`Projected taxes (${formatMoney(Number(r.annual_taxes_projected))}/yr) are >25% AND >$2,000/yr above current (${formatMoney(Number(r.annual_taxes_current))}/yr).`}
+                    >
+                      {" "}⚠
+                    </span>
+                  )}
+                </span>
                 <span className="monthlyVal">{formatMoney(h._m)}</span>
               </div>
               <div className="monthlyBar">
