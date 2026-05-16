@@ -41,11 +41,7 @@ export default async function handler(req, res) {
 
   let event;
   try {
-    event = stripe.webhooks.constructEvent(
-      rawBody,
-      sig,
-      process.env.STRIPE_WEBHOOK_SECRET
-    );
+    event = stripe.webhooks.constructEvent(rawBody, sig, process.env.STRIPE_WEBHOOK_SECRET);
   } catch (err) {
     console.error("Webhook signature verification failed:", err.message);
     return res.status(400).send(`Webhook Error: ${err.message}`);
@@ -57,24 +53,63 @@ export default async function handler(req, res) {
 
   const session = event.data.object;
   const meta = session.metadata || {};
+
+  // Dashboard per-address purchase
+  if (meta.type === "address_report") {
+    return handleAddressReport(session, res);
+  }
+
+  // Legacy plan purchase (landing-page flow)
+  return handlePlanPurchase(session, res);
+}
+
+async function handleAddressReport(session, res) {
+  const meta = session.metadata || {};
+  const address = meta.address;
+  const userId = meta.user_id;
+  const email = (meta.email || "").trim().toLowerCase();
+  const listing_url = meta.listing_url || "";
+
+  if (!address || !userId) {
+    console.error("address_report missing metadata", { meta });
+    return res.status(200).json({ received: true, error: "missing metadata" });
+  }
+
+  try {
+    const supabase = getSupabaseAdmin();
+    const { error: insertErr } = await supabase
+      .from("report_access")
+      .upsert({
+        user_id: userId,
+        address,
+        stripe_session_id: session.id,
+      });
+    if (insertErr) console.error("report_access upsert:", insertErr);
+  } catch (err) {
+    console.error("Supabase report_access error:", err);
+  }
+
+  // Notify the team to generate (or fulfill) the report.
+  if (email) {
+    await submitToFormspree({ listing_url: `${listing_url}\nADDRESS: ${address}`, email });
+  }
+
+  return res.status(200).json({ received: true });
+}
+
+async function handlePlanPurchase(session, res) {
+  const meta = session.metadata || {};
   const listing_url = meta.listing_url;
   const email = (meta.email || "").trim().toLowerCase();
   const plan = meta.plan;
 
   if (!listing_url || !email || !PLANS[plan]) {
-    console.error("Webhook missing metadata", { meta });
+    console.error("plan purchase missing metadata", { meta });
     return res.status(200).json({ received: true, error: "missing metadata" });
   }
 
-  // 1. Deliver the report
-  const delivered = await submitToFormspree({ listing_url, email });
-  if (!delivered) {
-    console.error("Formspree delivery failed for paid order", { email });
-    // Still continue — record the purchase so the user can re-submit.
-  }
+  await submitToFormspree({ listing_url, email });
 
-  // 2. Update Supabase: set plan to the purchased plan, reset report_count to 1
-  //    (this delivered report). Future reports within their plan increment the count.
   try {
     const supabase = getSupabaseAdmin();
     const { data: existing } = await supabase
@@ -82,7 +117,6 @@ export default async function handler(req, res) {
       .select("email")
       .eq("email", email)
       .maybeSingle();
-
     if (existing) {
       const { error: updateErr } = await supabase
         .from("users")
@@ -90,15 +124,13 @@ export default async function handler(req, res) {
         .eq("email", email);
       if (updateErr) console.error("Supabase update error:", updateErr);
     } else {
-      const { error: insertErr } = await supabase.from("users").insert({
-        email,
-        plan,
-        report_count: 1,
-      });
+      const { error: insertErr } = await supabase
+        .from("users")
+        .insert({ email, plan, report_count: 1 });
       if (insertErr) console.error("Supabase insert error:", insertErr);
     }
   } catch (err) {
-    console.error("Supabase webhook error:", err);
+    console.error("Supabase plan webhook error:", err);
   }
 
   return res.status(200).json({ received: true });

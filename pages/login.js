@@ -1,0 +1,81 @@
+import Head from "next/head";
+import Link from "next/link";
+import { useRouter } from "next/router";
+import { useState } from "react";
+import { getSupabaseClient } from "../lib/supabase-client";
+
+export default function Login() {
+  const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    const sb = getSupabaseClient();
+    if (!sb) {
+      setError("Auth is not configured. Add Supabase keys on Vercel.");
+      setLoading(false);
+      return;
+    }
+    const { error: signErr } = await sb.auth.signInWithPassword({ email, password });
+    if (signErr) {
+      setError(signErr.message);
+      setLoading(false);
+      return;
+    }
+    router.replace("/dashboard");
+  }
+
+  return (
+    <>
+      <Head>
+        <title>Sign in · HomeBiddy</title>
+      </Head>
+      <div className="topStripe" />
+      <main className="authPage">
+        <div className="authCard">
+          <h1 className="authTitle">Welcome back</h1>
+          <p className="authSub">Sign in to your saved homes.</p>
+          <form onSubmit={handleSubmit} className="authForm" noValidate>
+            <label className="formLabel" htmlFor="email">Email</label>
+            <input
+              id="email"
+              type="email"
+              className="formInput"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              autoComplete="email"
+              required
+            />
+            <label className="formLabel" htmlFor="password">Password</label>
+            <input
+              id="password"
+              type="password"
+              className="formInput"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Your password"
+              autoComplete="current-password"
+              required
+            />
+            {error && <div className="authError">{error}</div>}
+            <button type="submit" className="goButton" disabled={loading}>
+              {loading ? "Signing in…" : "Sign in"}
+            </button>
+          </form>
+          <div className="authFooter">
+            New here? <Link href="/signup">Create an account</Link>
+          </div>
+          <div className="authBack">
+            <Link href="/">← Back to home</Link>
+          </div>
+        </div>
+      </main>
+    </>
+  );
+}
