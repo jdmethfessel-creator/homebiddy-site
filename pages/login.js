@@ -10,10 +10,15 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [needsConfirm, setNeedsConfirm] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [info, setInfo] = useState("");
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError("");
+    setInfo("");
+    setNeedsConfirm(false);
     setLoading(true);
     const sb = getSupabaseClient();
     if (!sb) {
@@ -23,11 +28,40 @@ export default function Login() {
     }
     const { error: signErr } = await sb.auth.signInWithPassword({ email, password });
     if (signErr) {
-      setError(signErr.message);
+      const msg = signErr.message || "Could not sign in.";
+      if (/confirm/i.test(msg) || /not.*verified/i.test(msg)) {
+        setNeedsConfirm(true);
+        setError("Your email isn't confirmed yet. Check your inbox for the activation link, or resend it below.");
+      } else {
+        setError(msg);
+      }
       setLoading(false);
       return;
     }
     router.replace("/dashboard");
+  }
+
+  async function resendConfirmation() {
+    if (!email || resending) return;
+    setResending(true);
+    setInfo("");
+    const sb = getSupabaseClient();
+    if (!sb) {
+      setResending(false);
+      return;
+    }
+    const redirectTo = `${window.location.origin}/dashboard`;
+    const { error: resendErr } = await sb.auth.resend({
+      type: "signup",
+      email,
+      options: { emailRedirectTo: redirectTo },
+    });
+    setResending(false);
+    if (resendErr) {
+      setInfo(`Couldn't resend: ${resendErr.message}`);
+    } else {
+      setInfo("Confirmation email sent. Check your inbox.");
+    }
   }
 
   return (
@@ -64,7 +98,19 @@ export default function Login() {
               required
             />
             {error && <div className="authError">{error}</div>}
-            <button type="submit" className="goButton" disabled={loading}>
+            {needsConfirm && (
+              <button
+                type="button"
+                className="dashLink"
+                onClick={resendConfirmation}
+                disabled={resending}
+                style={{ marginTop: 8 }}
+              >
+                {resending ? "Sending…" : "Resend confirmation email"}
+              </button>
+            )}
+            {info && <div className="authInfo" style={{ marginTop: 8 }}>{info}</div>}
+            <button type="submit" className="goButton" disabled={loading} style={{ marginTop: 14 }}>
               {loading ? "Signing in…" : "Sign in"}
             </button>
           </form>

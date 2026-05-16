@@ -35,12 +35,14 @@ export default async function handler(req, res) {
       success_url: `${origin}/?paid=1&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/?canceled=1`,
       metadata: {
+        type: "plan",
         listing_url,
         email: normalizedEmail,
         plan,
       },
       payment_intent_data: {
         metadata: {
+          type: "plan",
           listing_url,
           email: normalizedEmail,
           plan,

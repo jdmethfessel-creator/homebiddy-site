@@ -53,14 +53,20 @@ export default async function handler(req, res) {
 
   const session = event.data.object;
   const meta = session.metadata || {};
+  const type = meta.type || "plan"; // back-compat: untagged metadata = landing-page plan
 
-  // Dashboard per-address purchase
-  if (meta.type === "address_report") {
+  // Two strictly separate flows:
+  //   - "plan": anonymous landing-page purchase → updates public.users + Formspree
+  //   - "address_report": authenticated dashboard purchase → grants report_access
+  // Misrouted metadata is logged and ignored — never cross over.
+  if (type === "address_report") {
     return handleAddressReport(session, res);
   }
-
-  // Legacy plan purchase (landing-page flow)
-  return handlePlanPurchase(session, res);
+  if (type === "plan") {
+    return handlePlanPurchase(session, res);
+  }
+  console.warn("Webhook: unknown metadata.type", { type, meta });
+  return res.status(200).json({ received: true, ignored: type });
 }
 
 async function handleAddressReport(session, res) {

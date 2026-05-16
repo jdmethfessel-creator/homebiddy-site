@@ -1052,6 +1052,17 @@ input {
   margin-top: 12px;
 }
 
+.authInfo {
+  background: var(--dash-blue-50);
+  color: var(--dash-blue-800);
+  border: 1px solid var(--dash-blue-200);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13.5px;
+  line-height: 1.45;
+  margin-top: 12px;
+}
+
 .authFooter,
 .authBack {
   margin-top: 14px;
