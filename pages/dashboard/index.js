@@ -65,6 +65,17 @@ function landLabel(score) {
   return "Weak";
 }
 
+// Plain-English message that replaces the BUY SIGNAL / MONITOR pill on
+// the Best Deal card. Tied to the negotiability score bands.
+function scoreMessage(score) {
+  if (score == null || isNaN(Number(score))) return "";
+  const v = Number(score);
+  if (v >= 8) return "Seller is motivated. Strong time to offer.";
+  if (v >= 6) return "Some room to negotiate. Worth pursuing.";
+  if (v >= 4) return "Limited leverage. Seller holding firm.";
+  return "Fresh listing. Wait for motivation signals.";
+}
+
 function LockIcon({ size = 12 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -220,7 +231,7 @@ function sortHomes(homes, key, dir) {
 // Data-quality flag for the offer range. Claude can mark a report with
 // data.offer_range_flagged when it suspects bad listing data; we also
 // apply a client-side sanity check so any home whose offer_low is more
-// than 25% below asking gets the ⚠ Verify tag regardless of what was
+// than 20% below asking gets the ⚠ Verify tag regardless of what was
 // stored at parse time.
 function offerRangeFlagged(report) {
   if (!report) return false;
@@ -228,13 +239,13 @@ function offerRangeFlagged(report) {
   const asking = Number(report.asking_price);
   const offerLow = Number(report.offer_low);
   if (!asking || !offerLow) return false;
-  return (asking - offerLow) / asking > 0.25;
+  return (asking - offerLow) / asking > 0.20;
 }
 
 function offerRangeFlagNote(report) {
   return (
     report?.data?.offer_range_flag_note ||
-    "Offer range is more than 25% below asking — verify listing data before relying on it."
+    "Offer range is more than 20% below asking — verify listing data before relying on it."
   );
 }
 
@@ -887,18 +898,13 @@ function BestDealCard({ home }) {
     ? (gapDollars / r.asking_price) * 100
     : 0;
   const score = r.negotiability_score;
-  const buy = score != null && score >= 7;
+  const message = scoreMessage(score);
   return (
     <AnswerCardShell kicker="Your Best Deal">
       <div className="answerHeaderRow">
         <Link href={`/dashboard/${encodeAddress(home.address)}`} className="answerAddress">
           {home.address}
         </Link>
-        {score != null && (
-          <span className={`answerPill answerPill_${buy ? "buy" : "monitor"}`}>
-            {buy ? "BUY SIGNAL" : "MONITOR"}
-          </span>
-        )}
       </div>
       <div className="bestDealRow">
         <div className="bestDealStat">
@@ -909,6 +915,7 @@ function BestDealCard({ home }) {
         </div>
         <ScoreGauge score={score} />
       </div>
+      {message && <div className="bestDealMessage">{message}</div>}
       <div className="bestDealSignals">
         {r.days_on_market != null && (
           <span className="bestDealSignal">
