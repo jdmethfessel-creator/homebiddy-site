@@ -343,6 +343,24 @@ export default function Home() {
       <div className="topStripe" />
 
       <main className="page">
+        <nav className="topNav" aria-label="Account">
+          {signedIn === true && (
+            <Link href="/dashboard" className="topNavDashboard">
+              Dashboard →
+            </Link>
+          )}
+          {signedIn === false && (
+            <>
+              <Link href="/login" className="topNavSignin">
+                Sign in
+              </Link>
+              <Link href="/signup" className="topNavSignup">
+                Sign up
+              </Link>
+            </>
+          )}
+        </nav>
+
         <header className="header">
           <div className="logo">
             <span className="logoIcon">
