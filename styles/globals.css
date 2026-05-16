@@ -2603,6 +2603,163 @@ input {
 }
 .bestDealNextStepLink:hover { color: var(--dash-blue-700); }
 
+/* Share button + Add button cluster in the dashboard header. */
+.dashHeaderActions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.dashShareBtn {
+  background: #fff;
+  color: var(--dash-blue-700);
+  border: 1px solid var(--dash-blue-200, #BFDBFE);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.dashShareBtn:hover { background: var(--dash-blue-50); }
+
+/* Shared (public read-only) dashboard layout. */
+.sharedShell {
+  min-height: 100vh;
+  background: #F8FAFC;
+}
+.sharedBanner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 24px;
+  background: var(--dash-blue-700);
+  color: #fff;
+  font-size: 13.5px;
+  letter-spacing: 0.02em;
+  flex-wrap: wrap;
+}
+.sharedBannerBrand {
+  color: #fff;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.sharedBannerCta {
+  background: #fff;
+  color: var(--dash-blue-700);
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 13px;
+}
+.sharedMain {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 32px 24px 64px;
+}
+.sharedTitle {
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--dash-ink);
+  margin: 0 0 6px;
+}
+.sharedSub {
+  color: var(--dash-muted);
+  margin: 0 0 24px;
+  font-size: 14px;
+}
+.sharedFooter {
+  margin-top: 48px;
+  padding: 24px;
+  text-align: center;
+  background: #fff;
+  border: 1px solid var(--dash-border);
+  border-radius: 10px;
+}
+.sharedFooter p { margin: 0 0 12px; color: var(--dash-muted); }
+
+/* Lifestyle summary under the property address in the ranked table. */
+.rankPropLifestyle {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--dash-muted);
+  letter-spacing: 0.02em;
+}
+
+/* Detail-page Lifestyle section. */
+.lifestyleSection {
+  margin: 24px 0;
+  padding: 16px 18px;
+  background: #F8FAFC;
+  border: 1px solid var(--dash-border);
+  border-radius: 8px;
+}
+.lifestyleRow {
+  margin: 6px 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--dash-ink);
+}
+.lifestyleLabel {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dash-muted);
+}
+.lifestyleChip {
+  display: inline-block;
+  padding: 2px 6px;
+  margin: 2px 0;
+  background: #fff;
+  border: 1px solid var(--dash-border);
+  border-radius: 4px;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+/* Offer letter button + modal. */
+.offerLetterCta {
+  margin: 24px 0;
+  text-align: center;
+}
+.offerLetterCard {
+  max-width: 640px;
+  width: 92vw;
+}
+.contingencyList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+  margin-bottom: 6px;
+}
+.contingencyOpt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+.offerLetterText {
+  margin: 14px 0;
+  padding: 14px 16px;
+  background: #F8FAFC;
+  border: 1px solid var(--dash-border);
+  border-radius: 6px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 13.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  max-height: 50vh;
+  overflow: auto;
+}
+.offerLetterActions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
 /* Price History column — directional ↓/↑ with amount + month. */
 .rankedColPriceHistory {
   min-width: 140px;

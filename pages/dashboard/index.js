@@ -493,6 +493,7 @@ export default function Dashboard() {
   const [plan, setPlan] = useState({ credits_remaining: 0, is_unlimited: false });
   const [markets, setMarkets] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
+  const [showShare, setShowShare] = useState(false);
   const [notice, setNotice] = useState(null);
   const [pendingAddress, setPendingAddress] = useState(null);
   const [selectedCompare, setSelectedCompare] = useState(() => new Set());
@@ -895,9 +896,18 @@ export default function Dashboard() {
                 </>
               )}
             </div>
-            <button className="dashAddBtn" onClick={() => setShowAdd(true)} type="button">
-              + Add home
-            </button>
+            <div className="dashHeaderActions">
+              <button
+                className="dashShareBtn"
+                onClick={() => setShowShare(true)}
+                type="button"
+              >
+                Share
+              </button>
+              <button className="dashAddBtn" onClick={() => setShowAdd(true)} type="button">
+                + Add home
+              </button>
+            </div>
           </div>
 
           {notice?.kind === "paid" && (
@@ -1035,7 +1045,101 @@ export default function Dashboard() {
           }}
         />
       )}
+      {showShare && (
+        <ShareModal token={token} onClose={() => setShowShare(false)} />
+      )}
     </>
+  );
+}
+
+// Generates a read-only share link via /api/dashboard/share. Shows the
+// resulting URL in a copyable input with a Copy button.
+function ShareModal({ token, onClose }) {
+  const [creating, setCreating] = useState(true);
+  const [url, setUrl] = useState("");
+  const [expires, setExpires] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    async function create() {
+      if (!token) return;
+      try {
+        const r = await fetch("/api/dashboard/share", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const j = await r.json();
+        if (cancelled) return;
+        if (!r.ok) {
+          setError(j.error || `Could not create share link (${r.status})`);
+          setCreating(false);
+          return;
+        }
+        const origin =
+          typeof window !== "undefined" ? window.location.origin : "";
+        setUrl(`${origin}/shared/${j.token}`);
+        setExpires(j.expires_at || "");
+        setCreating(false);
+      } catch (err) {
+        if (cancelled) return;
+        setError("Network error. Please try again.");
+        setCreating(false);
+      }
+    }
+    create();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  async function copyUrl() {
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {}
+  }
+
+  return (
+    <div className="overlay" role="dialog" aria-modal="true">
+      <div className="overlayCard">
+        <div className="overlayHeader">
+          <h2 className="overlayTitle">Share your dashboard</h2>
+          <p className="overlaySub">
+            Read-only · expires in 30 days · anyone with the link can view.
+          </p>
+        </div>
+        {creating ? (
+          <div className="dashEmpty">Creating link…</div>
+        ) : error ? (
+          <div className="authError">{error}</div>
+        ) : (
+          <>
+            <input
+              type="text"
+              className="formInput"
+              value={url}
+              readOnly
+              onFocus={(e) => e.target.select()}
+            />
+            <button
+              type="button"
+              className="goButton"
+              onClick={copyUrl}
+              style={{ marginTop: 12 }}
+            >
+              Copy link
+            </button>
+            {expires && (
+              <p className="overlaySub" style={{ marginTop: 12 }}>
+                Expires {new Date(expires).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}.
+              </p>
+            )}
+          </>
+        )}
+        <button type="button" className="dismissLink" onClick={onClose}>Close</button>
+      </div>
+    </div>
   );
 }
 
@@ -1707,6 +1811,15 @@ function RankedRow({
             </a>
           )}
         </div>
+        {unlocked && (r.school_rating_avg != null || r.walk_score != null) && (
+          <div className="rankPropLifestyle">
+            {r.school_rating_avg != null && (
+              <>Schools {Number(r.school_rating_avg).toFixed(1)}/10</>
+            )}
+            {r.school_rating_avg != null && r.walk_score != null && " · "}
+            {r.walk_score != null && <>Walk {r.walk_score}</>}
+          </div>
+        )}
       </td>
       <td className="rankedColNeighborhood">
         {submarket ? (

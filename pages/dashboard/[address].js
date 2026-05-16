@@ -239,8 +239,10 @@ export default function HomeReport() {
                 </div>
               )}
 
+              <LifestyleSection report={report} />
               <NegotiabilityBreakdown report={report} />
               <LandBreakdown report={report} />
+              <OfferLetterButton report={report} token={token} />
             </article>
           )}
         </main>
@@ -452,5 +454,236 @@ function CeilingRiskCard({ report }) {
         </p>
       </div>
     </aside>
+  );
+}
+
+// Lifestyle + schools section. Renders only when at least one of the
+// schema-v7 fields is present on the report.
+function LifestyleSection({ report }) {
+  if (!report) return null;
+  const hasSchools =
+    report.elementary_school || report.middle_school || report.high_school;
+  const hasLifestyle =
+    report.walk_score != null ||
+    report.transit_score != null ||
+    report.bike_score != null ||
+    report.commute_to_downtown_min != null ||
+    report.nearest_grocery_min != null;
+  if (!hasSchools && !hasLifestyle) return null;
+  return (
+    <section className="lifestyleSection">
+      <h2 className="dashH2">Lifestyle</h2>
+      {hasSchools && (
+        <p className="lifestyleRow">
+          <span className="lifestyleLabel">Schools:</span>{" "}
+          {report.elementary_school && (
+            <span className="lifestyleChip">
+              Elementary <strong>{report.elementary_school}</strong>
+              {report.elementary_rating != null && (
+                <> {Number(report.elementary_rating).toFixed(0)}/10</>
+              )}
+            </span>
+          )}
+          {report.middle_school && (
+            <>
+              {" · "}
+              <span className="lifestyleChip">
+                Middle <strong>{report.middle_school}</strong>
+                {report.middle_rating != null && (
+                  <> {Number(report.middle_rating).toFixed(0)}/10</>
+                )}
+              </span>
+            </>
+          )}
+          {report.high_school && (
+            <>
+              {" · "}
+              <span className="lifestyleChip">
+                High <strong>{report.high_school}</strong>
+                {report.high_rating != null && (
+                  <> {Number(report.high_rating).toFixed(0)}/10</>
+                )}
+              </span>
+            </>
+          )}
+        </p>
+      )}
+      {hasLifestyle && (
+        <p className="lifestyleRow">
+          <span className="lifestyleLabel">Lifestyle:</span>{" "}
+          {report.walk_score != null && <span className="lifestyleChip">Walk <strong>{report.walk_score}</strong></span>}
+          {report.transit_score != null && (
+            <>{" · "}<span className="lifestyleChip">Transit <strong>{report.transit_score}</strong></span></>
+          )}
+          {report.bike_score != null && (
+            <>{" · "}<span className="lifestyleChip">Bike <strong>{report.bike_score}</strong></span></>
+          )}
+          {report.commute_to_downtown_min != null && (
+            <>{" · "}<span className="lifestyleChip">Downtown <strong>{report.commute_to_downtown_min}</strong> min</span></>
+          )}
+          {report.nearest_grocery_min != null && (
+            <>{" · "}<span className="lifestyleChip">Grocery <strong>{report.nearest_grocery_min}</strong> min</span></>
+          )}
+        </p>
+      )}
+    </section>
+  );
+}
+
+// Generate Offer Letter — opens a modal, calls /api/dashboard/offer-letter
+// to render a Claude-written letter, then provides Copy + PDF download.
+function OfferLetterButton({ report, token }) {
+  const [open, setOpen] = useState(false);
+  if (!report?.address) return null;
+  return (
+    <>
+      <div className="offerLetterCta">
+        <button
+          type="button"
+          className="goButton"
+          onClick={() => setOpen(true)}
+        >
+          Generate Offer Letter
+        </button>
+      </div>
+      {open && (
+        <OfferLetterModal
+          report={report}
+          token={token}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
+  );
+}
+
+function OfferLetterModal({ report, token, onClose }) {
+  const [buyer, setBuyer] = useState("");
+  const [contingencies, setContingencies] = useState({
+    inspection: true,
+    financing: true,
+    appraisal: true,
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [letter, setLetter] = useState("");
+  const [error, setError] = useState("");
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!buyer.trim()) {
+      setError("Enter buyer name(s) before generating.");
+      return;
+    }
+    setError("");
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/dashboard/offer-letter", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          address: report.address,
+          buyer: buyer.trim(),
+          contingencies,
+        }),
+      });
+      const j = await res.json();
+      if (!res.ok) {
+        setError(j.error || `Generation failed (${res.status})`);
+        setSubmitting(false);
+        return;
+      }
+      setLetter(j.letter || "");
+    } catch (err) {
+      setError("Network error. Please try again.");
+    }
+    setSubmitting(false);
+  }
+
+  async function copyLetter() {
+    if (!letter) return;
+    try {
+      await navigator.clipboard.writeText(letter);
+    } catch {
+      // Fallback for older browsers — show the letter selected so user can Ctrl+C.
+    }
+  }
+
+  async function downloadPdf() {
+    if (!letter) return;
+    const res = await fetch("/api/dashboard/offer-letter-pdf", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ letter, address: report.address, buyer }),
+    });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `offer-letter-${report.address.replace(/[^a-z0-9]+/gi, "-")}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div className="overlay" role="dialog" aria-modal="true">
+      <div className="overlayCard offerLetterCard">
+        <div className="overlayHeader">
+          <h2 className="overlayTitle">Generate Offer Letter</h2>
+          <p className="overlaySub">{report.address}</p>
+        </div>
+        {!letter ? (
+          <form onSubmit={handleSubmit}>
+            <label className="formLabel" htmlFor="ol-buyer">Buyer name(s)</label>
+            <input
+              id="ol-buyer"
+              type="text"
+              className="formInput"
+              placeholder="e.g. Jordan & Riley Smith"
+              value={buyer}
+              onChange={(e) => setBuyer(e.target.value)}
+              autoFocus
+            />
+            <div className="formLabel" style={{ marginTop: 12 }}>Contingencies</div>
+            <div className="contingencyList">
+              {["inspection", "financing", "appraisal"].map((key) => (
+                <label key={key} className="contingencyOpt">
+                  <input
+                    type="checkbox"
+                    checked={!!contingencies[key]}
+                    onChange={(e) =>
+                      setContingencies((c) => ({ ...c, [key]: e.target.checked }))
+                    }
+                  />
+                  <span style={{ textTransform: "capitalize" }}>{key}</span>
+                </label>
+              ))}
+            </div>
+            {error && <div className="authError" style={{ marginTop: 10 }}>{error}</div>}
+            <button type="submit" className="goButton" disabled={submitting} style={{ marginTop: 14 }}>
+              {submitting ? "Generating…" : "Generate letter"}
+            </button>
+          </form>
+        ) : (
+          <div>
+            <pre className="offerLetterText">{letter}</pre>
+            <div className="offerLetterActions">
+              <button type="button" className="goButton" onClick={copyLetter}>
+                Copy
+              </button>
+              <button type="button" className="goButton" onClick={downloadPdf}>
+                Download PDF
+              </button>
+            </div>
+          </div>
+        )}
+        <button type="button" className="dismissLink" onClick={onClose}>Close</button>
+      </div>
+    </div>
   );
 }
