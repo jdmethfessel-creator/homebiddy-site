@@ -25,6 +25,17 @@ function shortAddress(addr) {
   return String(addr).split(",")[0].trim();
 }
 
+// Trim a free-form notes string to at most `maxWords` words. Used as a
+// safety net for older land_arbitrage_notes rows that pre-date the new
+// 'short phrase' prompt rules.
+function truncateWords(s, maxWords = 8) {
+  if (!s) return "";
+  const cleaned = String(s).replace(/\s+/g, " ").trim();
+  const words = cleaned.split(" ");
+  if (words.length <= maxWords) return cleaned;
+  return words.slice(0, maxWords).join(" ") + "…";
+}
+
 function LockIcon({ size = 12 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -82,20 +93,6 @@ function pickLowest(homes, field) {
     if (!best || Number(v) < Number(best.report[field])) return h;
     return best;
   }, null);
-}
-
-function pickConditionAdjustedHome(unlockedHomes) {
-  // Lower psf is better; longer DOM signals seller fatigue; more cuts even more.
-  // Subtract a small per-DOM-day and per-cut bonus.
-  return unlockedHomes.reduce((best, h) => {
-    const psf = Number(h.report?.price_per_living_sqft);
-    if (!psf) return best;
-    const dom = Number(h.report?.days_on_market) || 0;
-    const cuts = Number(h.report?.price_cuts) || 0;
-    const adj = psf - dom * 0.5 - cuts * 20;
-    if (!best || adj < best.adj) return { home: h, adj };
-    return best;
-  }, null)?.home;
 }
 
 function hasTaxRisk(report) {
@@ -441,7 +438,6 @@ export default function Dashboard() {
   const bestLivingPsf = useMemo(() => pickLowest(unlockedHomes, "price_per_living_sqft"), [unlockedHomes]);
   const bestLotPsf = useMemo(() => pickLowest(unlockedHomes, "price_per_lot_sqft"), [unlockedHomes]);
   const bestLandPlay = useMemo(() => pickBestLandPlay(unlockedHomes), [unlockedHomes]);
-  const condAdjusted = useMemo(() => pickConditionAdjustedHome(unlockedHomes), [unlockedHomes]);
   const totalSavings = useMemo(() => computeTotalSavings(unlockedHomes), [unlockedHomes]);
   const marketCondition = useMemo(() => aggregateMarketConditions(markets), [markets]);
   const primaryCity = useMemo(() => pickPrimaryCity(visibleHomes), [visibleHomes]);
@@ -531,7 +527,6 @@ export default function Dashboard() {
                 bestLiving={bestLivingPsf}
                 bestLot={bestLotPsf}
                 bestLandPlay={bestLandPlay}
-                conditionAdjusted={condAdjusted}
                 psfByMarket={psfByMarket}
               />
               <TrueMonthlyCostCard unlockedHomes={unlockedHomes} />
@@ -730,7 +725,7 @@ function BestDealCard({ home }) {
 
 /* ===================== CARD 2 — VALUE BREAKDOWN with race bars ===================== */
 
-function ValueBreakdownCard({ unlockedHomes, bestLiving, bestLot, bestLandPlay, conditionAdjusted, psfByMarket }) {
+function ValueBreakdownCard({ unlockedHomes, bestLiving, bestLot, bestLandPlay, psfByMarket }) {
   if (unlockedHomes.length === 0) {
     return (
       <EmptyAnswerCard
@@ -808,7 +803,6 @@ function ValueBreakdownCard({ unlockedHomes, bestLiving, bestLot, bestLandPlay, 
       {hasLivingPsf && (
         <ValueMetricRow
           label="Best $/sqft living"
-          sublabel="Most space for your money"
           winner={bestLiving}
           field="price_per_living_sqft"
           psfKey="living"
@@ -819,7 +813,6 @@ function ValueBreakdownCard({ unlockedHomes, bestLiving, bestLot, bestLandPlay, 
       {hasLotPsf && (
         <ValueMetricRow
           label="Best $/sqft lot"
-          sublabel="Best land value"
           winner={bestLot}
           field="price_per_lot_sqft"
           psfKey="lot"
@@ -830,12 +823,6 @@ function ValueBreakdownCard({ unlockedHomes, bestLiving, bestLot, bestLandPlay, 
       {hasLandScore && (
         <LandPlayRow winner={bestLandPlay} unlockedHomes={unlockedHomes} />
       )}
-      {conditionAdjusted && (
-        <div className="answerSubline valueAdjusted">
-          <strong>Condition-adjusted:</strong> {shortAddress(conditionAdjusted.address)} may offer
-          the best effective value after factoring in DOM and price cuts.
-        </div>
-      )}
     </AnswerCardShell>
   );
 }
@@ -844,7 +831,7 @@ function ValueBreakdownCard({ unlockedHomes, bestLiving, bestLot, bestLandPlay, 
 // other homes on the list. A home priced at the neighborhood average gets
 // a 50% bar. Below avg = longer, fuller green bar (better value). Above
 // avg = shorter, lighter bar (worse value).
-function ValueMetricRow({ label, sublabel, winner, field, psfKey, unlockedHomes, psfByMarket }) {
+function ValueMetricRow({ label, winner, field, psfKey, unlockedHomes, psfByMarket }) {
   const homes = unlockedHomes
     .filter((h) => h.report?.[field] != null && !isNaN(Number(h.report[field])))
     .map((h) => ({ ...h, _v: Number(h.report[field]) }))
@@ -855,10 +842,6 @@ function ValueMetricRow({ label, sublabel, winner, field, psfKey, unlockedHomes,
       <div className="valueRow">
         <div className="valueRowHeader">
           <div className="valueRowLabel">{label}</div>
-          <div className="valueRowSub">{sublabel}</div>
-        </div>
-        <div className="answerEmpty" style={{ fontSize: 12 }}>
-          Not enough data yet.
         </div>
       </div>
     );
@@ -879,7 +862,6 @@ function ValueMetricRow({ label, sublabel, winner, field, psfKey, unlockedHomes,
     <div className="valueRow">
       <div className="valueRowHeader">
         <div className="valueRowLabel">{label}</div>
-        <div className="valueRowSub">{sublabel}</div>
       </div>
       <div className="valueBars">
         {homes.map((h) => {
@@ -924,8 +906,9 @@ function ValueMetricRow({ label, sublabel, winner, field, psfKey, unlockedHomes,
 }
 
 // Third row in Value Breakdown — surfaces the Best Land Play home (highest
-// land_arbitrage_score) with the same race-bar treatment. Bar width is
-// score/10 since the metric is already bounded to [0,10].
+// land_arbitrage_score). Bar width is score/10 since the metric is bounded
+// to [0,10]. Notes are truncated to 8 words client-side as a safety net for
+// older rows; the prompt now requests short phrases natively.
 function LandPlayRow({ winner, unlockedHomes }) {
   const homes = unlockedHomes
     .filter(
@@ -937,11 +920,11 @@ function LandPlayRow({ winner, unlockedHomes }) {
     .sort((a, b) => b._s - a._s)
     .slice(0, MAX_BARS_PER_CARD);
   if (homes.length === 0) return null;
+  const shortNotes = truncateWords(winner?.report?.land_arbitrage_notes, 8);
   return (
     <div className="valueRow">
       <div className="valueRowHeader">
         <div className="valueRowLabel">Best Land Play</div>
-        <div className="valueRowSub">Land value + renovation upside</div>
       </div>
       <div className="valueBars">
         {homes.map((h, i) => {
@@ -963,9 +946,7 @@ function LandPlayRow({ winner, unlockedHomes }) {
           );
         })}
       </div>
-      {winner?.report?.land_arbitrage_notes && (
-        <div className="valueLandNotes">{winner.report.land_arbitrage_notes}</div>
-      )}
+      {shortNotes && <div className="valueLandNotes">{shortNotes}</div>}
     </div>
   );
 }

@@ -94,7 +94,7 @@ insert into public.reports (
   'X', 9278, 1038,
   11781,
   7.4,
-  'Solid 7,500 sqft lot at $266/sqft (~10% below Old Northwood median) with a 1989 structure showing 136 DOM and two cuts — meaningful land-value play with renovation upside.',
+  'Standard lot, 1989 build, motivated seller, renovation upside',
   jsonb_build_object(
     'dom_score', 9,
     'price_cut_score', 8,
