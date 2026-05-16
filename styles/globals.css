@@ -2085,17 +2085,23 @@ input {
   margin-bottom: 10px;
 }
 
-.dashMarketBadge_hot {
+/* Buyer's = green, Neutral = amber, Competitive = red */
+.dashMarketBadge_buyers {
+  background: #DCFCE7;
+  color: #15803D;
+}
+.dashMarketBadge_neutral {
   background: #FEF3C7;
   color: #92400E;
 }
-.dashMarketBadge_buyers {
-  background: #DCFCE7;
-  color: #047857;
+.dashMarketBadge_competitive {
+  background: #FEE2E2;
+  color: #B91C1C;
 }
-.dashMarketBadge_neutral {
-  background: #F1F5F9;
-  color: var(--dash-muted);
+/* legacy alias retained while old data may still emit "Hot" */
+.dashMarketBadge_hot {
+  background: #FEE2E2;
+  color: #B91C1C;
 }
 
 /* --- Inline comparison panel (replaces /dashboard/compare) --- */
@@ -2266,6 +2272,388 @@ input {
   font-size: 13px;
   text-align: center;
 }
+
+/* ============================================================================
+   v4 command-center: top bar + 3 answer cards + ranked table
+   ============================================================================ */
+
+.dashTopBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.dashTopBarText {
+  font-size: 13px;
+  color: var(--dash-muted);
+}
+.dashTopBarText strong {
+  color: var(--dash-ink);
+  font-weight: 600;
+}
+
+/* --- Answer card grid --- */
+.answerGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  margin-bottom: 22px;
+}
+@media (min-width: 760px) {
+  .answerGrid { grid-template-columns: repeat(3, 1fr); }
+}
+
+.answerCard {
+  background: var(--dash-surface);
+  border: 1px solid var(--dash-border);
+  border-radius: 14px;
+  padding: 18px 18px 16px;
+  box-shadow: var(--dash-shadow-md);
+  display: flex;
+  flex-direction: column;
+  min-height: 170px;
+  gap: 8px;
+}
+
+.answerCard_dark {
+  background: linear-gradient(135deg, #0A2540, #1E3A8A);
+  color: #fff;
+  border-color: #0A2540;
+}
+.answerCard_buyers {
+  background: linear-gradient(155deg, #ECFDF5, #DCFCE7 60%);
+  border-color: #BBF7D0;
+}
+.answerCard_neutral {
+  background: linear-gradient(155deg, #FFFBEB, #FEF3C7 60%);
+  border-color: #FDE68A;
+}
+.answerCard_competitive {
+  background: linear-gradient(155deg, #FEF2F2, #FEE2E2 60%);
+  border-color: #FCA5A5;
+}
+
+.answerKicker {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dash-muted);
+}
+.answerCard_dark .answerKicker {
+  color: rgba(219, 234, 254, 0.85);
+}
+.answerCard_buyers .answerKicker { color: #15803D; }
+.answerCard_neutral .answerKicker { color: #92400E; }
+.answerCard_competitive .answerKicker { color: #B91C1C; }
+
+.answerHeaderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.answerAddress {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 600;
+  font-size: 16px;
+  color: var(--dash-ink);
+  line-height: 1.2;
+  flex: 1;
+  min-width: 0;
+}
+.answerAddress:hover { color: var(--dash-blue-700); }
+
+.answerPill {
+  display: inline-block;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  padding: 3px 9px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  color: #fff;
+  white-space: nowrap;
+}
+.answerPill_buy { background: #15803D; }
+.answerPill_monitor { background: #92400E; }
+
+.answerBigStat {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 700;
+  font-size: 28px;
+  color: var(--dash-ink);
+  letter-spacing: -0.015em;
+  line-height: 1.1;
+  margin-top: 2px;
+}
+.answerCard_dark .answerBigStat { color: #fff; }
+
+.answerStatGreen { color: #15803D; }
+
+.answerBigTemp {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 700;
+  font-size: 32px;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  margin-top: 2px;
+}
+.answerCard_buyers .answerBigTemp { color: #15803D; }
+.answerCard_neutral .answerBigTemp { color: #92400E; }
+.answerCard_competitive .answerBigTemp { color: #B91C1C; }
+
+.answerSubline {
+  font-size: 12.5px;
+  color: var(--dash-muted);
+  line-height: 1.4;
+}
+.answerSubline strong { color: var(--dash-ink); font-weight: 600; }
+.answerSublineDark, .answerCard_dark .answerSubline {
+  color: rgba(219, 234, 254, 0.85);
+}
+.answerSublineDark strong, .answerCard_dark .answerSubline strong {
+  color: #fff;
+}
+.answerCard_buyers .answerSubline strong { color: #14532D; }
+.answerCard_neutral .answerSubline strong { color: #78350F; }
+.answerCard_competitive .answerSubline strong { color: #7F1D1D; }
+
+.answerLink {
+  margin-top: auto;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dash-blue-700);
+  align-self: flex-start;
+}
+
+.answerEmpty {
+  color: var(--dash-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.answerCard_dark .answerEmpty { color: rgba(219, 234, 254, 0.75); }
+
+/* --- Ranked table (Bloomberg-row feel) --- */
+.rankedWrap {
+  background: var(--dash-surface);
+  border: 1px solid var(--dash-border);
+  border-radius: 14px;
+  box-shadow: var(--dash-shadow-sm);
+  overflow: hidden;
+  margin-bottom: 22px;
+}
+
+.rankedTableScroll {
+  overflow-x: auto;
+}
+
+.rankedTable {
+  width: 100%;
+  min-width: 880px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+}
+
+.rankedTable thead th {
+  background: var(--dash-blue-900);
+  color: #fff;
+  font-family: "DM Sans", sans-serif;
+  font-weight: 600;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 11px 12px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.rankedTable tbody td {
+  padding: 12px;
+  border-bottom: 1px solid var(--dash-border);
+  color: var(--dash-ink);
+  vertical-align: middle;
+}
+.rankedTable tbody tr:last-child td { border-bottom: none; }
+
+.rankedTable tbody tr:hover td {
+  background: var(--dash-blue-50);
+}
+
+.rankedColRank { width: 56px; }
+.rankedColProp { min-width: 220px; }
+.rankedColDeal { width: 110px; }
+.rankedColActions { width: 220px; }
+
+.rankBadgeNum {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--dash-blue-50);
+  color: var(--dash-blue-800);
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 700;
+  font-size: 13px;
+  border-radius: 8px;
+  padding: 4px 8px;
+  min-width: 32px;
+}
+.rankBadgeMuted {
+  display: inline-block;
+  color: var(--dash-muted);
+  font-size: 13px;
+}
+
+.rankAddress {
+  display: inline-block;
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--dash-ink);
+  line-height: 1.25;
+}
+.rankAddress:hover { color: var(--dash-blue-700); }
+
+.rankBadge {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dash-blue-700);
+  background: var(--dash-blue-50);
+  border: 1px solid var(--dash-blue-200);
+  padding: 2px 7px;
+  border-radius: 999px;
+  vertical-align: 1px;
+}
+
+.rankAsk, .rankOffer, .rankDom {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.rankOffer { color: var(--dash-blue-700); font-weight: 600; }
+.rankSavings {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 700;
+  color: #15803D;
+  font-variant-numeric: tabular-nums;
+}
+
+.rankScore {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 600;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.scoreDot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+.scoreDot_green { background: #15803D; }
+.scoreDot_amber { background: #F59E0B; }
+.scoreDot_red   { background: #DC2626; }
+.scoreDot_muted { background: var(--dash-border); }
+
+.dealBar {
+  width: 90px;
+  height: 8px;
+  background: var(--dash-blue-50);
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--dash-blue-100);
+}
+.dealBarFill {
+  height: 100%;
+  background: linear-gradient(90deg, #15803D 0%, #22C55E 100%);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.rankActionsBox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.rankCheckLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dash-muted);
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.rankCheck {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--dash-blue-600);
+  cursor: pointer;
+  margin: 0;
+}
+.rankCheckText { color: var(--dash-blue-700); }
+
+.rankViewBtn {
+  background: var(--dash-blue-600);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+.rankViewBtn:hover { background: var(--dash-blue-700); }
+
+.rankUnlockBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--dash-blue-600);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.rankUnlockBtn:hover { background: var(--dash-blue-700); }
+.rankUnlockBtn:disabled { opacity: 0.7; cursor: not-allowed; }
+
+.rankRemoveBtn {
+  background: transparent;
+  border: none;
+  color: var(--dash-muted);
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.rankRemoveBtn:hover { background: var(--dash-blue-50); color: var(--dash-blue-700); }
+
+.rankedLockedRow td { background: rgba(241, 245, 249, 0.4); }
+.rankedLockedRow:hover td { background: var(--dash-blue-50); }
 
 /* === Shopping timeline === */
 .dashTimeline {

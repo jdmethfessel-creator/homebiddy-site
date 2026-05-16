@@ -4,19 +4,11 @@ import { useRouter } from "next/router";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import DashboardHeader from "../../components/DashboardHeader";
 import { getSupabaseClient } from "../../lib/supabase-client";
-import {
-  rankHomes,
-  scoreReport,
-  explainBestValue,
-  formatMoney,
-  formatMoneyFull,
-  formatPercent,
-} from "../../lib/scoring";
+import { formatMoney, formatMoneyFull } from "../../lib/scoring";
 import {
   pickUpsell,
-  timelineFor,
   getMarketKey,
-  temperatureFor,
+  aggregateMarketConditions,
 } from "../../lib/market-intel";
 
 const MAX_COMPARE = 4;
@@ -25,7 +17,7 @@ function encodeAddress(addr) {
   return encodeURIComponent(addr);
 }
 
-function LockIcon({ size = 14 }) {
+function LockIcon({ size = 12 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <rect x="3" y="11" width="18" height="11" rx="2" />
@@ -34,16 +26,58 @@ function LockIcon({ size = 14 }) {
   );
 }
 
-function signalColorForScore(score) {
+function dotColorForScore(score) {
   if (score == null) return "muted";
   if (score >= 7) return "green";
   if (score >= 5) return "amber";
   return "red";
 }
 
-function buySignalForScore(score) {
-  if (score == null) return null;
-  return score >= 7 ? "buy" : "monitor";
+function temperatureClass(temp) {
+  if (temp === "Competitive") return "competitive";
+  if (temp === "Buyer's Market") return "buyers";
+  return "neutral";
+}
+
+function savingsFor(home) {
+  if (!home?.has_access || !home?.report) return null;
+  const { asking_price, offer_low } = home.report;
+  if (!asking_price || !offer_low) return null;
+  return asking_price - offer_low;
+}
+
+function rankByArbitrage(homes) {
+  return [...homes]
+    .map((h) => ({ ...h, savings: savingsFor(h) }))
+    .sort((a, b) => {
+      if (a.savings == null && b.savings == null) {
+        return new Date(b.created_at) - new Date(a.created_at);
+      }
+      if (a.savings == null) return 1;
+      if (b.savings == null) return -1;
+      return b.savings - a.savings;
+    });
+}
+
+function pickBestNegotiabilityHome(unlockedHomes) {
+  return unlockedHomes.reduce((best, h) => {
+    if (!h.report || h.report.negotiability_score == null) return best;
+    if (!best || h.report.negotiability_score > best.report.negotiability_score) return h;
+    return best;
+  }, null);
+}
+
+function computeTotalSavings(unlockedHomes) {
+  let low = 0;
+  let high = 0;
+  let count = 0;
+  for (const h of unlockedHomes) {
+    if (!h.report || !h.report.asking_price) continue;
+    if (h.report.offer_high != null) low += h.report.asking_price - h.report.offer_high;
+    if (h.report.offer_low != null) high += h.report.asking_price - h.report.offer_low;
+    if (h.report.offer_low != null || h.report.offer_high != null) count++;
+  }
+  return { low, high, count };
 }
 
 export default function Dashboard() {
@@ -125,7 +159,6 @@ export default function Dashboard() {
     }
   }, [router]);
 
-  // Drop any compare selections for homes that disappear or get locked.
   useEffect(() => {
     setSelectedCompare((prev) => {
       const next = new Set();
@@ -210,14 +243,19 @@ export default function Dashboard() {
     setSelectedCompare(new Set());
   }
 
-  const homesForRanking = useMemo(
-    () => homes.map((h) => ({ ...h, report: h.has_access ? h.report : null })),
+  const unlockedHomes = useMemo(
+    () => homes.filter((h) => h.has_access && h.report),
     [homes]
   );
-  const ranked = useMemo(() => rankHomes(homesForRanking), [homesForRanking]);
-  const topRanked = ranked.find((h) => h.scoring);
-  const topExplanation = topRanked ? explainBestValue(topRanked, topRanked.scoring) : null;
-  const timeline = timelineFor(homesForRanking);
+  const bestNeg = useMemo(() => pickBestNegotiabilityHome(unlockedHomes), [unlockedHomes]);
+  const totalSavings = useMemo(() => computeTotalSavings(unlockedHomes), [unlockedHomes]);
+  const marketCondition = useMemo(() => aggregateMarketConditions(markets), [markets]);
+  const ranked = useMemo(() => rankByArbitrage(homes), [homes]);
+  const maxSavings = useMemo(
+    () => ranked.reduce((m, h) => (h.savings && h.savings > m ? h.savings : m), 0),
+    [ranked]
+  );
+
   const upsell = !plan.is_unlimited ? pickUpsell(homes.length) : null;
 
   const comparing = useMemo(
@@ -233,14 +271,20 @@ export default function Dashboard() {
       <div className="dashRoot">
         <DashboardHeader email={user?.email} />
         <main className="dashMain">
-          <div className="dashTitleRow">
-            <div>
-              <h1 className="dashTitle">Your saved homes</h1>
-              <p className="dashSubtitle">
-                {homes.length === 0
-                  ? "Start by adding a Zillow or Realtor.com listing."
-                  : `${homes.length} home${homes.length === 1 ? "" : "s"} saved.`}
-              </p>
+          <div className="dashTopBar">
+            <div className="dashTopBarText">
+              {homes.length === 0 ? (
+                "Start by adding a Zillow or Realtor.com listing."
+              ) : (
+                <>
+                  <strong>{homes.length}</strong> home{homes.length === 1 ? "" : "s"} saved
+                  {plan.is_unlimited
+                    ? " · unlimited plan"
+                    : plan.credits_remaining > 0
+                    ? ` · ${plan.credits_remaining} credit${plan.credits_remaining === 1 ? "" : "s"}`
+                    : ""}
+                </>
+              )}
             </div>
             <button className="dashAddBtn" onClick={() => setShowAdd(true)} type="button">
               + Add home
@@ -262,51 +306,41 @@ export default function Dashboard() {
             </div>
           )}
 
-          {timeline && (
-            <TimelineStrip
-              timeline={timeline}
-              credits={plan.credits_remaining}
-              unlimited={plan.is_unlimited}
-            />
-          )}
-
-          {topRanked?.scoring && (
-            <BestValueHero
-              home={topRanked}
-              scoring={topRanked.scoring}
-              explanation={topExplanation}
-            />
-          )}
-
-          {markets.length > 0 && (
-            <MarketIntelligenceSection markets={markets} />
-          )}
+          {/* SECTION 1 — Top 3 answer cards */}
+          <div className="answerGrid">
+            <BestDealCard home={bestNeg} />
+            <TotalSavingsCard totals={totalSavings} />
+            <MarketConditionsCard condition={marketCondition} />
+          </div>
 
           {upsell && (
             <UpsellBanner upsell={upsell} onClick={() => startPlanCheckout(upsell.plan)} />
           )}
 
-          <div className="dashGrid">
-            {loading && <div className="dashEmpty">Loading…</div>}
-            {!loading && ranked.length === 0 && (
-              <div className="dashEmpty">
-                No homes yet. <button className="dashLink" onClick={() => setShowAdd(true)}>Add your first home</button> to see analysis here.
-              </div>
-            )}
-            {ranked.map((h) => (
-              <HomeCard
-                key={h.id}
-                home={h}
-                pending={pendingAddress === h.address}
-                credits={plan.credits_remaining}
-                unlimited={plan.is_unlimited}
-                selected={selectedCompare.has(h.id)}
-                onToggleCompare={() => toggleCompare(h.id)}
-                onRemove={() => handleRemove(h.id)}
-                onUnlock={() => handleUnlock(h)}
-              />
-            ))}
-          </div>
+          {/* SECTION 2 — Ranked table */}
+          {loading && <div className="dashEmpty" style={{ marginBottom: 18 }}>Loading…</div>}
+          {!loading && ranked.length === 0 && (
+            <div className="dashEmpty" style={{ marginBottom: 18 }}>
+              No homes yet.{" "}
+              <button className="dashLink" onClick={() => setShowAdd(true)}>
+                Add your first home
+              </button>{" "}
+              to see analysis here.
+            </div>
+          )}
+          {ranked.length > 0 && (
+            <RankedTable
+              ranked={ranked}
+              maxSavings={maxSavings}
+              selectedSet={selectedCompare}
+              onToggleCompare={toggleCompare}
+              onUnlock={handleUnlock}
+              onRemove={handleRemove}
+              pendingAddress={pendingAddress}
+              credits={plan.credits_remaining}
+              unlimited={plan.is_unlimited}
+            />
+          )}
 
           {compareLimitMessage && (
             <div className="compareLimitNote" role="status">
@@ -321,6 +355,9 @@ export default function Dashboard() {
               onClear={clearCompare}
             />
           )}
+
+          {/* SECTION 3 — Market intelligence by submarket */}
+          {markets.length > 0 && <MarketIntelligenceSection markets={markets} />}
         </main>
       </div>
 
@@ -338,91 +375,318 @@ export default function Dashboard() {
   );
 }
 
-function TimelineStrip({ timeline, credits, unlimited }) {
-  const planLabel = unlimited
-    ? "Unlimited access"
-    : credits > 0
-    ? `${credits} report credit${credits === 1 ? "" : "s"} remaining`
-    : null;
+/* ===================== TOP 3 ANSWER CARDS ===================== */
+
+function AnswerCardShell({ kicker, children, variant }) {
+  const cls = ["answerCard", variant ? `answerCard_${variant}` : ""]
+    .filter(Boolean)
+    .join(" ");
   return (
-    <div className="dashTimeline">
-      <div className="dashTimelineCell">
-        <div className="dashTimelineKicker">Shopping for</div>
-        <div className="dashTimelineValue">
-          {timeline.days_shopping} day{timeline.days_shopping === 1 ? "" : "s"}
-        </div>
-      </div>
-      <div className="dashTimelineCell">
-        <div className="dashTimelineKicker">Saved</div>
-        <div className="dashTimelineValue">
-          {timeline.home_count} home{timeline.home_count === 1 ? "" : "s"}
-        </div>
-        <div className="dashTimelineSub">
-          across {timeline.neighborhood_count || 0} submarket
-          {timeline.neighborhood_count === 1 ? "" : "s"}
-        </div>
-      </div>
-      <div className="dashTimelineCell">
-        <div className="dashTimelineKicker">Most negotiable</div>
-        {timeline.most_negotiable ? (
-          <>
-            <div className="dashTimelineValue dashTimelineAddr">
-              {timeline.most_negotiable.address}
-            </div>
-            <div className="dashTimelineSub">{timeline.most_negotiable.score}/10</div>
-          </>
-        ) : (
-          <div className="dashTimelineSub">Unlock a report to see</div>
-        )}
-      </div>
-      {planLabel && (
-        <div className="dashTimelineCell dashTimelinePlan">
-          <div className="dashTimelineKicker">Plan</div>
-          <div className="dashTimelineValue">{planLabel}</div>
-        </div>
-      )}
+    <div className={cls}>
+      <div className="answerKicker">{kicker}</div>
+      {children}
     </div>
   );
 }
 
-function BestValueHero({ home, scoring, explanation }) {
-  const r = home.report;
-  const signal = buySignalForScore(r.negotiability_score);
+function EmptyAnswerCard({ kicker, message, variant }) {
   return (
-    <div className="dashBest">
-      <div className="dashBestTopRow">
-        <span className="dashBestTag">⭐ Best value</span>
-        {signal && (
-          <span className={`dashBestPill dashBestPill_${signal}`}>
-            {signal === "buy" ? "BUY SIGNAL" : "MONITOR"}
+    <AnswerCardShell kicker={kicker} variant={variant}>
+      <div className="answerEmpty">{message}</div>
+    </AnswerCardShell>
+  );
+}
+
+function BestDealCard({ home }) {
+  if (!home || !home.report) {
+    return (
+      <EmptyAnswerCard
+        kicker="Your Best Deal Right Now"
+        message="Unlock a report to see your strongest negotiation opportunity."
+      />
+    );
+  }
+  const r = home.report;
+  const savings = (r.asking_price || 0) - (r.offer_low || 0);
+  const score = r.negotiability_score;
+  const buy = score != null && score >= 7;
+  return (
+    <AnswerCardShell kicker="Your Best Deal Right Now">
+      <div className="answerHeaderRow">
+        <Link href={`/dashboard/${encodeAddress(home.address)}`} className="answerAddress">
+          {home.address}
+        </Link>
+        {score != null && (
+          <span className={`answerPill answerPill_${buy ? "buy" : "monitor"}`}>
+            {buy ? "BUY SIGNAL" : "MONITOR"}
           </span>
         )}
       </div>
-      <Link href={`/dashboard/${encodeAddress(home.address)}`} className="dashBestAddress">
-        {home.address}
-      </Link>
-      <div className="dashBestPriceBlock">
-        <div className="dashBestListLine">
-          LIST PRICE · <span>{formatMoneyFull(r.asking_price)}</span>
-        </div>
-        <div className="dashBestOfferLabel">YOUR LIKELY PURCHASE</div>
-        <div className="dashBestOfferRange">
-          {formatMoneyFull(r.offer_low)} – {formatMoneyFull(r.offer_high)}
-        </div>
+      <div className="answerBigStat answerStatGreen">
+        Save up to {formatMoney(savings)}
       </div>
-      <div className="dashBestUpsideRow">
-        <div className="dashBestUpsideAmt">{formatMoneyFull(scoring.estimated_equity)}</div>
-        <div className="dashBestUpsideLabel">
-          Conservative 3-year upside · <strong>{formatPercent(scoring.upside_pct_value, 1)}</strong>
-        </div>
+      <div className="answerSubline">
+        <strong>{score}</strong> / 10 negotiability · most negotiable home in your list
       </div>
-      {explanation && <div className="dashBestExplain">{explanation}</div>}
-      <Link href={`/dashboard/${encodeAddress(home.address)}`} className="dashBestCta">
-        View full report →
+      <Link href={`/dashboard/${encodeAddress(home.address)}`} className="answerLink">
+        View report →
       </Link>
+    </AnswerCardShell>
+  );
+}
+
+function TotalSavingsCard({ totals }) {
+  if (!totals.count) {
+    return (
+      <EmptyAnswerCard
+        kicker="Total Savings on the Table"
+        message="Unlock reports to see aggregated savings across your list."
+        variant="dark"
+      />
+    );
+  }
+  const low = Math.max(0, totals.low);
+  const high = Math.max(0, totals.high);
+  return (
+    <AnswerCardShell kicker="Total Savings on the Table" variant="dark">
+      <div className="answerBigStat">
+        You could save {formatMoney(low)} – {formatMoney(high)}
+      </div>
+      <div className="answerSubline answerSublineDark">
+        across <strong>{totals.count}</strong> home{totals.count === 1 ? "" : "s"} vs. current asking prices
+      </div>
+    </AnswerCardShell>
+  );
+}
+
+function MarketConditionsCard({ condition }) {
+  if (!condition) {
+    return (
+      <EmptyAnswerCard
+        kicker="Market Conditions"
+        message="Save a home to see local market conditions."
+      />
+    );
+  }
+  const variant = temperatureClass(condition.temperature);
+  return (
+    <AnswerCardShell kicker="Market Conditions" variant={variant}>
+      <div className="answerBigTemp">{condition.temperature}</div>
+      <div className="answerSubline">
+        Avg DOM <strong>{condition.avg_dom}</strong> · typical{" "}
+        <strong>{condition.avg_discount_pct}%</strong> off list
+      </div>
+    </AnswerCardShell>
+  );
+}
+
+/* ===================== RANKED TABLE ===================== */
+
+function RankedTable({
+  ranked,
+  maxSavings,
+  selectedSet,
+  onToggleCompare,
+  onUnlock,
+  onRemove,
+  pendingAddress,
+  credits,
+  unlimited,
+}) {
+  let unlockedRank = 0;
+  return (
+    <div className="rankedWrap">
+      <div className="rankedTableScroll">
+        <table className="rankedTable">
+          <thead>
+            <tr>
+              <th className="rankedColRank">#</th>
+              <th className="rankedColProp">Property</th>
+              <th>Asking</th>
+              <th>Your offer range</th>
+              <th>Potential savings</th>
+              <th>Score</th>
+              <th>DOM</th>
+              <th className="rankedColDeal">Deal</th>
+              <th className="rankedColActions"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {ranked.map((h) => {
+              const unlocked = h.has_access && h.report;
+              if (unlocked && h.savings != null) unlockedRank += 1;
+              return (
+                <RankedRow
+                  key={h.id}
+                  home={h}
+                  rank={unlocked && h.savings != null ? unlockedRank : null}
+                  maxSavings={maxSavings}
+                  selected={selectedSet.has(h.id)}
+                  onToggleCompare={() => onToggleCompare(h.id)}
+                  onUnlock={() => onUnlock(h)}
+                  onRemove={() => onRemove(h.id)}
+                  pending={pendingAddress === h.address}
+                  credits={credits}
+                  unlimited={unlimited}
+                />
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
+
+function RankedRow({
+  home,
+  rank,
+  maxSavings,
+  selected,
+  onToggleCompare,
+  onUnlock,
+  onRemove,
+  pending,
+  credits,
+  unlimited,
+}) {
+  const r = home.report || {};
+  const unlocked = home.has_access && home.report;
+  const submarket = getMarketKey(r);
+  const dot = unlocked ? dotColorForScore(r.negotiability_score) : "muted";
+  const dealPct =
+    unlocked && home.savings && maxSavings
+      ? Math.max(2, Math.round((home.savings / maxSavings) * 100))
+      : 0;
+
+  return (
+    <tr className={unlocked ? "" : "rankedLockedRow"}>
+      <td className="rankedColRank">
+        {rank != null ? <span className="rankBadgeNum">#{rank}</span> : <span className="rankBadgeMuted">—</span>}
+      </td>
+      <td className="rankedColProp">
+        <Link
+          href={`/dashboard/${encodeAddress(home.address)}`}
+          className="rankAddress"
+        >
+          {home.address}
+        </Link>
+        {submarket && <span className="rankBadge">{submarket}</span>}
+      </td>
+      <td>
+        <span className="rankAsk">
+          {r.asking_price ? formatMoneyFull(r.asking_price) : "—"}
+        </span>
+      </td>
+      <td>
+        {unlocked ? (
+          <span className="rankOffer">
+            {formatMoney(r.offer_low)}–{formatMoney(r.offer_high)}
+          </span>
+        ) : (
+          <span className="dashBlur">$X,XXX,XXX–$X,XXX,XXX</span>
+        )}
+      </td>
+      <td>
+        {unlocked && home.savings != null ? (
+          <span className="rankSavings">{formatMoney(home.savings)}</span>
+        ) : (
+          <span className="dashBlur">$XXX,XXX</span>
+        )}
+      </td>
+      <td>
+        {unlocked ? (
+          <span className="rankScore">
+            <span className={`scoreDot scoreDot_${dot}`} />
+            {r.negotiability_score ?? "—"}
+          </span>
+        ) : (
+          <span className="dashBlur">X.X</span>
+        )}
+      </td>
+      <td>
+        {unlocked ? (
+          <span className="rankDom">{r.days_on_market ?? "—"}</span>
+        ) : (
+          <span className="dashBlur">XXX</span>
+        )}
+      </td>
+      <td className="rankedColDeal">
+        {unlocked && home.savings ? (
+          <div
+            className="dealBar"
+            title={`${dealPct}% of top deal`}
+            aria-label={`Deal strength ${dealPct} percent of top deal`}
+          >
+            <div className="dealBarFill" style={{ width: `${dealPct}%` }} />
+          </div>
+        ) : (
+          <span className="dashBlur">▬▬▬</span>
+        )}
+      </td>
+      <td className="rankedColActions">
+        {unlocked ? (
+          <div className="rankActionsBox">
+            <label className="rankCheckLabel" title="Add to comparison">
+              <input
+                type="checkbox"
+                checked={selected}
+                onChange={onToggleCompare}
+                className="rankCheck"
+              />
+              <span className="rankCheckText">Compare</span>
+            </label>
+            <Link
+              href={`/dashboard/${encodeAddress(home.address)}`}
+              className="rankViewBtn"
+            >
+              View →
+            </Link>
+            <button
+              type="button"
+              className="rankRemoveBtn"
+              onClick={onRemove}
+              aria-label="Remove"
+              title="Remove"
+            >
+              ×
+            </button>
+          </div>
+        ) : (
+          <div className="rankActionsBox">
+            <button
+              type="button"
+              className="rankUnlockBtn"
+              onClick={onUnlock}
+              disabled={pending}
+            >
+              <LockIcon size={11} />
+              {pending ? "..." : unlockLabel(home, credits, unlimited)}
+            </button>
+            <button
+              type="button"
+              className="rankRemoveBtn"
+              onClick={onRemove}
+              aria-label="Remove"
+              title="Remove"
+            >
+              ×
+            </button>
+          </div>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+function unlockLabel(home, credits, unlimited) {
+  if (unlimited) return "Unlock free";
+  if (credits > 0) return `Use credit (${credits})`;
+  if (!home.report_exists) return "Generate · $19.99";
+  return "Unlock · $19.99";
+}
+
+/* ===================== MARKET INTELLIGENCE ===================== */
 
 function MarketIntelligenceSection({ markets }) {
   return (
@@ -449,19 +713,13 @@ function MarketCard({ item }) {
       </div>
     );
   }
-  const temp = s.temperature || temperatureFor(s);
-  const tempClass =
-    temp === "Hot"
-      ? "hot"
-      : temp === "Buyer's Market"
-      ? "buyers"
-      : "neutral";
+  const tempClass = temperatureClass(s.temperature);
   return (
     <div className="dashMarketCard">
       <div className="dashMarketHeaderRow">
         <div className="dashMarketName">{name}</div>
         <span className={`dashMarketBadge dashMarketBadge_${tempClass}`}>
-          {temp}
+          {s.temperature}
         </span>
       </div>
       <div className="dashMarketRow">
@@ -485,6 +743,8 @@ function MarketCard({ item }) {
   );
 }
 
+/* ===================== UPSELL ===================== */
+
 function UpsellBanner({ upsell, onClick }) {
   return (
     <button type="button" className="dashUpsell" onClick={onClick}>
@@ -501,110 +761,7 @@ function UpsellBanner({ upsell, onClick }) {
   );
 }
 
-function HomeCard({ home, pending, credits, unlimited, selected, onToggleCompare, onRemove, onUnlock }) {
-  const r = home.report || {};
-  const unlocked = home.has_access && home.report;
-  const scoring = unlocked ? scoreReport(r) : null;
-  const submarket = getMarketKey(r);
-  const signal = unlocked ? signalColorForScore(r.negotiability_score) : "muted";
-
-  return (
-    <div className={`dashCard dashCard_${signal}${unlocked ? "" : " dashCardLocked"}`}>
-      <div className="dashCardHeaderRow">
-        {submarket ? (
-          <span className="dashSubmarketBadge">{submarket}</span>
-        ) : (
-          <span className="dashSubmarketBadge dashSubmarketBadgeMuted">—</span>
-        )}
-        {unlocked ? (
-          <label className="dashCompareCheck">
-            <input
-              type="checkbox"
-              checked={selected}
-              onChange={onToggleCompare}
-            />
-            <span>Compare</span>
-          </label>
-        ) : (
-          <button className="dashCardRemove" onClick={onRemove} aria-label="Remove">×</button>
-        )}
-      </div>
-
-      <Link href={`/dashboard/${encodeAddress(home.address)}`} className="dashCardAddress">
-        {home.address}
-      </Link>
-
-      <div className="dashCardAsking">
-        {r.asking_price ? formatMoneyFull(r.asking_price) : "—"}
-      </div>
-
-      <div className="dashCardOfferRow">
-        <span className="dashCardKicker">Your offer</span>
-        {unlocked ? (
-          <span className="dashCardOfferVal">
-            {formatMoney(r.offer_low)}–{formatMoney(r.offer_high)}
-          </span>
-        ) : (
-          <span className="dashCardOfferVal dashBlur">$1,XXX,000–$1,XXX,000</span>
-        )}
-      </div>
-
-      <div className="dashCardStats">
-        <div>
-          <span className="dashCardKicker">Score</span>
-          {unlocked ? <strong>{r.negotiability_score}</strong> : <strong className="dashBlur">X.X</strong>}
-        </div>
-        <div>
-          <span className="dashCardKicker">DOM</span>
-          {unlocked ? <strong>{r.days_on_market}</strong> : <strong className="dashBlur">XXX</strong>}
-        </div>
-        <div>
-          <span className="dashCardKicker">Value</span>
-          {scoring ? <strong>{scoring.score}</strong> : <strong className="dashBlur">XX</strong>}
-        </div>
-      </div>
-
-      <div className="dashCardFooter">
-        {unlocked ? (
-          <>
-            <button
-              type="button"
-              className="dashCardSecondary"
-              onClick={onRemove}
-              aria-label="Remove home"
-            >
-              Remove
-            </button>
-            <Link href={`/dashboard/${encodeAddress(home.address)}`} className="dashCardLink">
-              View report →
-            </Link>
-          </>
-        ) : (
-          <>
-            <span className="dashCardLockHint">
-              <LockIcon size={11} /> unlock to compare
-            </span>
-            <button
-              type="button"
-              className="dashCardCta dashCardCtaSm"
-              onClick={onUnlock}
-              disabled={pending}
-            >
-              <LockIcon /> {pending ? "Unlocking…" : unlockLabel(home, credits, unlimited)}
-            </button>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function unlockLabel(home, credits, unlimited) {
-  if (unlimited) return "Unlock free";
-  if (credits > 0) return `Use credit (${credits} left)`;
-  if (!home.report_exists) return "Generate · $19.99";
-  return "Unlock · $19.99";
-}
+/* ===================== INLINE COMPARE PANEL ===================== */
 
 function InlineCompare({ comparing, onRemove, onClear }) {
   return (
@@ -625,7 +782,10 @@ function InlineCompare({ comparing, onRemove, onClear }) {
               {comparing.map((h) => (
                 <th key={h.id}>
                   <div className="compareColHead">
-                    <Link href={`/dashboard/${encodeAddress(h.address)}`} className="compareColAddr">
+                    <Link
+                      href={`/dashboard/${encodeAddress(h.address)}`}
+                      className="compareColAddr"
+                    >
                       {h.address}
                     </Link>
                     <button
@@ -705,6 +865,8 @@ function CompareRow({ label, cells, accent }) {
     </tr>
   );
 }
+
+/* ===================== ADD HOME MODAL ===================== */
 
 function AddHomeModal({ token, onClose, onSaved }) {
   const [url, setUrl] = useState("");
