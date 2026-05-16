@@ -2366,6 +2366,12 @@ input {
   min-height: 260px;
   gap: 8px;
 }
+/* Variant: shrink-to-fit (used by Value Breakdown so its rows don't
+   leave trailing whitespace under the Full breakdown link). */
+.answerCard_auto {
+  min-height: 0;
+  align-self: start;
+}
 
 .valueFullLink {
   margin-top: auto;
@@ -2834,6 +2840,13 @@ input {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.valueWinnerRef {
+  font-size: 11px;
+  color: var(--dash-muted);
+  letter-spacing: 0.01em;
+  margin-top: 2px;
+  font-style: italic;
 }
 
 /* Pending stub rows inside the True Monthly Cost card. */

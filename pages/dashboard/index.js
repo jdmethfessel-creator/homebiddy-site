@@ -1357,14 +1357,21 @@ function ValueBreakdownCard({ unlockedHomes, psfByMarket }) {
     lotWinner && psfByMarket
       ? psfByMarket.get(getMarketKey(lotWinner.home.report))?.lot
       : null;
+  const livingNeighborhood = livingWinner ? getMarketKey(livingWinner.home.report) : null;
+  const lotNeighborhood = lotWinner ? getMarketKey(lotWinner.home.report) : null;
 
   return (
-    <AnswerCardShell kicker="Value Breakdown">
+    <AnswerCardShell kicker="Value Breakdown" variant="auto">
       {livingWinner && (
         <ValueWinnerRow
           label="$/sqft living"
           home={livingWinner.home}
           value={`$${Math.round(livingWinner.v).toLocaleString()}`}
+          reference={
+            livingMarket
+              ? `vs ${livingNeighborhood || "neighborhood"} avg $${Math.round(livingMarket).toLocaleString()}/sqft`
+              : "Neighborhood avg unavailable"
+          }
           {...psfBar(livingWinner.v, livingMarket)}
         />
       )}
@@ -1373,6 +1380,11 @@ function ValueBreakdownCard({ unlockedHomes, psfByMarket }) {
           label="$/sqft lot"
           home={lotWinner.home}
           value={`$${Math.round(lotWinner.v).toLocaleString()}`}
+          reference={
+            lotMarket
+              ? `vs ${lotNeighborhood || "neighborhood"} avg $${Math.round(lotMarket).toLocaleString()}/sqft lot`
+              : "Neighborhood avg unavailable"
+          }
           {...psfBar(lotWinner.v, lotMarket)}
         />
       )}
@@ -1381,6 +1393,7 @@ function ValueBreakdownCard({ unlockedHomes, psfByMarket }) {
           label="Land play"
           home={landWinner.home}
           value={`${formatFinalScore(landWinner.v)}/10`}
+          reference={`Score ${formatFinalScore(landWinner.v)}/10 — ${landPlayLabel(landWinner.v)}`}
           pct={Math.max(5, Math.min(100, Math.round((landWinner.v / 10) * 100)))}
           below={true}
         />
@@ -1404,8 +1417,17 @@ function psfBar(winnerValue, marketAvg) {
   return { pct, below: winnerValue <= marketAvg };
 }
 
-// One stat row per category: label, value, address, proportional bar.
-function ValueWinnerRow({ label, home, value, pct, below }) {
+function landPlayLabel(score) {
+  const v = Number(score);
+  if (isNaN(v)) return "—";
+  if (v >= 7.5) return "Strong";
+  if (v >= 5) return "Moderate";
+  return "Weak";
+}
+
+// One stat row per category: label, value, address, proportional bar,
+// and a small reference line explaining what the bar is measured against.
+function ValueWinnerRow({ label, home, value, pct, below, reference }) {
   return (
     <div className="valueWinnerRow">
       <div className="valueWinnerMeta">
@@ -1419,6 +1441,7 @@ function ValueWinnerRow({ label, home, value, pct, below }) {
           style={{ width: `${pct}%` }}
         />
       </div>
+      {reference && <div className="valueWinnerRef">{reference}</div>}
     </div>
   );
 }
