@@ -1,6 +1,27 @@
 import { getSupabaseAdmin } from "../../lib/supabase-server";
 import { hasQuota } from "../../lib/plans";
-import { submitToFormspree } from "../../lib/formspree";
+import {
+  analyzeWithClaude,
+  generateReportId,
+  formatDateLong,
+} from "../../lib/auto-report";
+import { renderReportPDF } from "../../lib/report-pdf";
+import { sendReportEmail } from "../../lib/email";
+
+// Vercel: allow this function to run long enough for Claude + PDF + email.
+// Hobby caps at 10s; this requires Pro (max 800s).
+export const config = {
+  maxDuration: 120,
+};
+
+async function fulfillReport({ listing_url, email }) {
+  const data = await analyzeWithClaude(listing_url);
+  const reportId = generateReportId(data.address || email);
+  const dateLabel = formatDateLong();
+  const pdfBuffer = await renderReportPDF(data, { reportId, dateLabel });
+  await sendReportEmail({ to: email, address: data.address, pdfBuffer });
+  return { address: data.address, reportId };
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -37,10 +58,14 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Database error" });
   }
 
+  // === New user: free first report ===
   if (!existing) {
-    const ok = await submitToFormspree({ listing_url, email: normalizedEmail });
-    if (!ok) {
-      return res.status(502).json({ error: "Could not deliver report" });
+    let fulfilled;
+    try {
+      fulfilled = await fulfillReport({ listing_url, email: normalizedEmail });
+    } catch (err) {
+      console.error("Fulfillment error (new user):", err);
+      return res.status(502).json({ error: `Could not deliver report: ${err.message}` });
     }
 
     const { error: insertErr } = await supabase.from("users").insert({
@@ -50,13 +75,22 @@ export default async function handler(req, res) {
     });
     if (insertErr) console.error("Supabase insert error:", insertErr);
 
-    return res.status(200).json({ status: "submitted", plan: "free" });
+    return res.status(200).json({
+      status: "submitted",
+      plan: "free",
+      address: fulfilled.address,
+      report_id: fulfilled.reportId,
+    });
   }
 
+  // === Existing user with remaining quota: deliver another report ===
   if (hasQuota(existing.plan, existing.report_count)) {
-    const ok = await submitToFormspree({ listing_url, email: normalizedEmail });
-    if (!ok) {
-      return res.status(502).json({ error: "Could not deliver report" });
+    let fulfilled;
+    try {
+      fulfilled = await fulfillReport({ listing_url, email: normalizedEmail });
+    } catch (err) {
+      console.error("Fulfillment error (returning user):", err);
+      return res.status(502).json({ error: `Could not deliver report: ${err.message}` });
     }
 
     const { error: updateErr } = await supabase
@@ -65,9 +99,15 @@ export default async function handler(req, res) {
       .eq("email", normalizedEmail);
     if (updateErr) console.error("Supabase update error:", updateErr);
 
-    return res.status(200).json({ status: "submitted", plan: existing.plan });
+    return res.status(200).json({
+      status: "submitted",
+      plan: existing.plan,
+      address: fulfilled.address,
+      report_id: fulfilled.reportId,
+    });
   }
 
+  // === Out of quota: client opens the pricing modal ===
   return res.status(200).json({
     status: "payment_required",
     plan: existing.plan,

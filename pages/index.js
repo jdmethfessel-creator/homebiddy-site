@@ -2,11 +2,15 @@ import Head from "next/head";
 import { useEffect, useRef, useState } from "react";
 
 const STEPS = [
-  "Fetching listing details",
-  "Pulling nearby closed sales",
-  "Analyzing comp features",
-  "Building your offer report",
+  "Fetching listing data…",
+  "Analyzing closed sales…",
+  "Calculating offer range…",
+  "Generating your report…",
 ];
+
+// Each step advances ~11s. The final step stays in the active/spinning state
+// until the server actually returns — Claude + PDF + email takes ~30-60s.
+const STEP_INTERVAL_MS = 11000;
 
 const PRICING = [
   {
@@ -102,7 +106,8 @@ export default function Home() {
     const params = new URLSearchParams(window.location.search);
     if (params.get("paid") === "1") {
       setReturnNotice("paid");
-      runProcessingThenSuccess();
+      // After Stripe payment, fulfillment happens on the next form submit.
+      // Just show the canceled notice and let user resubmit.
       window.history.replaceState({}, document.title, window.location.pathname);
     } else if (params.get("canceled") === "1") {
       setReturnNotice("canceled");
@@ -116,27 +121,31 @@ export default function Home() {
     return () => timeouts.current.forEach(clearTimeout);
   }, []);
 
-  function runProcessingThenSuccess() {
+  function startProcessingAnimation() {
     setOverlayState("processing");
     setActiveStep(0);
     timeouts.current.forEach(clearTimeout);
     timeouts.current = [];
-    STEPS.forEach((_, i) => {
+    // Schedule transitions to make steps 0..STEPS.length-2 "done" in order.
+    // Step STEPS.length-1 stays "active" (spinner) until the server returns.
+    for (let i = 0; i < STEPS.length - 1; i++) {
       timeouts.current.push(
-        setTimeout(() => setActiveStep(i + 1), (i + 1) * 900)
+        setTimeout(() => setActiveStep(i + 1), (i + 1) * STEP_INTERVAL_MS)
       );
-    });
-    timeouts.current.push(
-      setTimeout(() => setOverlayState("success"), STEPS.length * 900 + 350)
-    );
+    }
+  }
+
+  function cancelProcessingAnimation() {
+    timeouts.current.forEach(clearTimeout);
+    timeouts.current = [];
   }
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!url || !email || overlayState === "submitting" || overlayState === "processing") return;
+    if (!url || !email || overlayState === "processing") return;
 
     setErrorMessage("");
-    setOverlayState("submitting");
+    startProcessingAnimation();
 
     let json;
     try {
@@ -147,27 +156,33 @@ export default function Home() {
       });
       json = await r.json();
       if (!r.ok) {
+        cancelProcessingAnimation();
         setErrorMessage(json?.error || "Something went wrong. Try again.");
         setOverlayState("error");
         return;
       }
     } catch (err) {
+      cancelProcessingAnimation();
       setErrorMessage("Network error. Try again.");
       setOverlayState("error");
       return;
     }
 
     if (json.status === "submitted") {
-      runProcessingThenSuccess();
+      cancelProcessingAnimation();
+      setActiveStep(STEPS.length); // all checkmarks
+      setOverlayState("success");
       return;
     }
 
     if (json.status === "payment_required") {
+      cancelProcessingAnimation();
       setOverlayState("idle");
       setShowPricing(true);
       return;
     }
 
+    cancelProcessingAnimation();
     setErrorMessage("Unexpected response. Try again.");
     setOverlayState("error");
   }
@@ -210,13 +225,16 @@ export default function Home() {
   }
 
   const showOverlay = overlayState !== "idle";
+  // Progress: each completed step counts plus a small bump for the active step.
   const progressPct =
     overlayState === "success"
       ? 100
       : overlayState === "processing"
-      ? Math.min(100, (activeStep / STEPS.length) * 100)
-      : overlayState === "submitting"
-      ? 10
+      ? Math.min(
+          100,
+          ((activeStep + (activeStep < STEPS.length ? 0.5 : 0)) / STEPS.length) *
+            100
+        )
       : 0;
 
   return (
@@ -303,9 +321,9 @@ export default function Home() {
             <button
               type="submit"
               className="goButton"
-              disabled={overlayState === "submitting" || overlayState === "processing"}
+              disabled={overlayState === "processing"}
             >
-              {overlayState === "submitting" ? "Checking…" : <>Go <ArrowRight /></>}
+              Go <ArrowRight />
             </button>
           </form>
 
@@ -561,19 +579,19 @@ export default function Home() {
       {showOverlay && (
         <div className="overlay" role="dialog" aria-live="polite" aria-modal="true">
           <div className="overlayCard">
-            {(overlayState === "submitting" || overlayState === "processing") && (
+            {overlayState === "processing" && (
               <>
                 <div className="overlayHeader">
                   <h2 className="overlayTitle">Building your report</h2>
-                  <p className="overlaySub">Hang tight — this takes about 10 seconds.</p>
+                  <p className="overlaySub">Hang tight — this takes about 45 seconds.</p>
                 </div>
                 <div className="progressTrack">
                   <div className="progressFill" style={{ width: `${progressPct}%` }} />
                 </div>
                 <ul className="stepList" style={{ listStyle: "none", margin: 0, padding: 0 }}>
                   {STEPS.map((label, i) => {
-                    const done = overlayState === "processing" && i < activeStep;
-                    const active = overlayState === "processing" && i === activeStep;
+                    const done = i < activeStep;
+                    const active = i === activeStep;
                     return (
                       <li
                         key={label}
