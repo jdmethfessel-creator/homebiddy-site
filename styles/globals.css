@@ -1091,13 +1091,16 @@ input {
 }
 
 .dashHeaderRow {
-  max-width: 1100px;
+  max-width: 1500px;
   margin: 0 auto;
-  padding: 0 20px 14px;
+  padding: 0 14px 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+@media (min-width: 1280px) {
+  .dashHeaderRow { padding: 0 20px 14px; }
 }
 
 .dashLogo {
@@ -1153,10 +1156,13 @@ input {
 }
 
 .dashSubnav {
-  max-width: 1100px;
+  max-width: 1500px;
   margin: 0 auto;
-  padding: 0 20px 12px;
+  padding: 0 14px 12px;
   font-size: 13px;
+}
+@media (min-width: 1280px) {
+  .dashSubnav { padding: 0 20px 12px; }
 }
 
 .dashSubLink {
@@ -1165,9 +1171,14 @@ input {
 }
 
 .dashMain {
-  max-width: 1100px;
+  max-width: 1500px;
   margin: 0 auto;
-  padding: 24px 20px 60px;
+  /* Tighter horizontal padding so the table feels full-width; the inner
+     content still has comfortable breathing room. */
+  padding: 24px 14px 60px;
+}
+@media (min-width: 1280px) {
+  .dashMain { padding: 24px 20px 60px; }
 }
 
 .dashTitleRow {
@@ -2312,15 +2323,88 @@ input {
   box-shadow: var(--dash-shadow-md);
   display: flex;
   flex-direction: column;
-  /* All three cards share the same height; grid+align-items handles the
-     row-by-row alignment, and min-height anchors the baseline so they
-     don't shrink too short when content is sparse. */
-  min-height: 220px;
+  /* All three cards share the same height. Grid + align-items: stretch
+     normalizes the row, and min-height keeps mobile (single-column) view
+     consistent across cards. */
+  min-height: 260px;
   gap: 8px;
 }
 
 .valueFullLink {
   margin-top: auto;
+}
+
+/* --- Stat row lines for the simplified Value Breakdown card --- */
+.statRowList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+.statRowLine {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--dash-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.statRowLabel {
+  color: var(--dash-muted);
+}
+.statRowDot {
+  color: var(--dash-border);
+  font-weight: 700;
+}
+.statRowAddr {
+  color: var(--dash-ink);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.statRowValue {
+  color: var(--dash-ink);
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+
+/* --- Tax reassessment summary line at the bottom of Card 3 --- */
+.taxFlagSummary {
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: #92400E;
+  background: #FEF3C7;
+  border: 1px solid #FDE68A;
+  border-radius: 8px;
+  padding: 6px 10px;
+  letter-spacing: 0.01em;
+  line-height: 1.4;
+}
+
+/* --- Ranked-table Size column --- */
+.rankSize {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+.rankSizeMain {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 500;
+  font-size: 13px;
+  color: var(--dash-ink);
+  font-variant-numeric: tabular-nums;
+}
+.rankSizeLot {
+  font-size: 11px;
+  color: var(--dash-muted);
+  margin-top: 1px;
+  font-variant-numeric: tabular-nums;
 }
 
 .answerCard_dark {
@@ -3048,8 +3132,8 @@ input {
 .dashMuted { color: var(--dash-muted); }
 
 /* Table needs more headroom for the extra columns + wider address column.
-   With the new Land column we bump min-width again. */
-.rankedTable { min-width: 1400px; }
+   With the new Size column we bump min-width again. */
+.rankedTable { min-width: 1480px; }
 
 /* --- Hero empty state shown when user has no homes saved at all --- */
 .answerHero {

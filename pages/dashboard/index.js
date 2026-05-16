@@ -36,6 +36,23 @@ function truncateWords(s, maxWords = 8) {
   return words.slice(0, maxWords).join(" ") + "…";
 }
 
+// Display formatter for 0-10 scores. Integer scores render without a
+// decimal (8 not 8.0); decimals only when meaningful (8.5 stays 8.5).
+function formatScore(n) {
+  if (n == null || isNaN(Number(n))) return "—";
+  const v = Number(n);
+  return Number.isInteger(v) ? String(v) : v.toFixed(1);
+}
+
+// Map a 0-10 land_arbitrage_score to a word label for Card 2.
+function landLabel(score) {
+  if (score == null || isNaN(Number(score))) return "—";
+  const v = Number(score);
+  if (v >= 7) return "Strong";
+  if (v >= 5) return "Moderate";
+  return "Weak";
+}
+
 function LockIcon({ size = 12 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -151,9 +168,9 @@ function pickPrimaryCity(homes) {
   return best;
 }
 
-// Submarket avg $/sqft lookup keyed by market key. Each entry exposes both
-// living and lot averages so the Value Breakdown bars can compare each home
-// against the right benchmark.
+// Submarket avg $/sqft lookup — still used by the ranked-table $/sqft column
+// to drive the up/down vs-market arrow indicator. Each entry exposes both
+// living and lot averages.
 function submarketPsfMap(markets) {
   const m = new Map();
   for (const x of markets || []) {
@@ -533,7 +550,6 @@ export default function Dashboard() {
                 bestLiving={bestLivingPsf}
                 bestLot={bestLotPsf}
                 bestLandPlay={bestLandPlay}
-                psfByMarket={psfByMarket}
               />
               <TrueMonthlyCostCard unlockedHomes={unlockedHomes} />
             </div>
@@ -685,7 +701,7 @@ function ScoreGauge({ score }) {
         fontWeight="700"
         fill="#0A2540"
       >
-        {v.toFixed(1)}
+        {formatScore(v)}
       </text>
     </svg>
   );
@@ -737,7 +753,7 @@ function BestDealCard({ home }) {
 
 /* ===================== CARD 2 — VALUE BREAKDOWN with race bars ===================== */
 
-function ValueBreakdownCard({ unlockedHomes, bestLiving, bestLot, bestLandPlay, psfByMarket }) {
+function ValueBreakdownCard({ unlockedHomes, bestLiving, bestLot, bestLandPlay }) {
   if (unlockedHomes.length === 0) {
     return (
       <EmptyAnswerCard
@@ -747,94 +763,53 @@ function ValueBreakdownCard({ unlockedHomes, bestLiving, bestLot, bestLandPlay, 
     );
   }
 
-  // If no home has any PSF data (older reports pre-schema-v4), show a
-  // graceful fallback that surfaces what we DO have instead of an empty
-  // card.
-  const hasLivingPsf = unlockedHomes.some(
-    (h) => h.report?.price_per_living_sqft != null
-  );
-  const hasLotPsf = unlockedHomes.some(
-    (h) => h.report?.price_per_lot_sqft != null
-  );
-  const hasLandScore = unlockedHomes.some(
-    (h) => h.report?.land_arbitrage_score != null
-  );
+  const livingPsf = Number(bestLiving?.report?.price_per_living_sqft);
+  const lotPsf = Number(bestLot?.report?.price_per_lot_sqft);
+  const landScore = Number(bestLandPlay?.report?.land_arbitrage_score);
 
-  if (!hasLivingPsf && !hasLotPsf && !hasLandScore) {
-    // Show offer-vs-asking gap fallback so the card still informs.
-    const sorted = [...unlockedHomes]
-      .filter(
-        (h) => h.report?.asking_price && h.report?.offer_low
-      )
-      .map((h) => ({
-        ...h,
-        _gap:
-          ((h.report.asking_price - h.report.offer_low) /
-            h.report.asking_price) *
-          100,
-      }))
-      .sort((a, b) => b._gap - a._gap)
-      .slice(0, MAX_BARS_PER_CARD);
-    const max = sorted[0]?._gap || 1;
+  const hasLivingPsf = !isNaN(livingPsf) && livingPsf > 0;
+  const hasLotPsf = !isNaN(lotPsf) && lotPsf > 0;
+  const hasLandScore = !isNaN(landScore);
+  const hasAny = hasLivingPsf || hasLotPsf || hasLandScore;
+
+  if (!hasAny) {
     return (
       <AnswerCardShell kicker="Value Breakdown">
-        <div className="valueRow">
-          <div className="valueRowHeader">
-            <div className="valueRowLabel">Biggest gap under asking</div>
-            <div className="valueRowSub">$/sqft data pending</div>
-          </div>
-          <div className="valueBars">
-            {sorted.map((h, i) => {
-              const pct = Math.max(8, Math.round((h._gap / max) * 100));
-              return (
-                <div key={h.id} className="valueBarRow">
-                  <div className="valueBarLabel">
-                    <span className="valueBarPsf">{h._gap.toFixed(1)}%</span>
-                    <span className="valueBarAddr">{shortAddress(h.address)}</span>
-                  </div>
-                  <div className="valueRaceBar">
-                    <div
-                      className={`valueRaceFill${i === 0 ? " valueRaceFillWin" : ""}`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <div className="valueMarketRef">
-            Refresh reports to add $/sqft living + lot comparisons.
-          </div>
+        <div className="answerEmpty">
+          $/sqft + land data appears once fresh reports include the new fields.
         </div>
+        <a href="#ranked-homes" className="answerLink valueFullLink">
+          Full breakdown →
+        </a>
       </AnswerCardShell>
     );
   }
 
   return (
     <AnswerCardShell kicker="Value Breakdown">
-      {hasLivingPsf && (
-        <ValueMetricRow
-          label="Best $/sqft living"
-          winner={bestLiving}
-          field="price_per_living_sqft"
-          psfKey="living"
-          unlockedHomes={unlockedHomes}
-          psfByMarket={psfByMarket}
-        />
-      )}
-      {hasLotPsf && (
-        <ValueMetricRow
-          label="Best $/sqft lot"
-          winner={bestLot}
-          field="price_per_lot_sqft"
-          psfKey="lot"
-          unlockedHomes={unlockedHomes}
-          psfByMarket={psfByMarket}
-        />
-      )}
-      {hasLandScore && (
-        <LandPlayRow winner={bestLandPlay} unlockedHomes={unlockedHomes} />
-      )}
+      <div className="statRowList">
+        {hasLivingPsf && (
+          <StatRow
+            label="$/sqft living"
+            address={bestLiving.address}
+            value={`$${Math.round(livingPsf).toLocaleString()}`}
+          />
+        )}
+        {hasLotPsf && (
+          <StatRow
+            label="$/sqft lot"
+            address={bestLot.address}
+            value={`$${Math.round(lotPsf).toLocaleString()}`}
+          />
+        )}
+        {hasLandScore && (
+          <StatRow
+            label="Land play"
+            address={bestLandPlay.address}
+            value={landLabel(landScore)}
+          />
+        )}
+      </div>
       <a href="#ranked-homes" className="answerLink valueFullLink">
         Full breakdown →
       </a>
@@ -842,105 +817,22 @@ function ValueBreakdownCard({ unlockedHomes, bestLiving, bestLot, bestLandPlay, 
   );
 }
 
+function StatRow({ label, address, value }) {
+  return (
+    <div className="statRowLine">
+      <span className="statRowLabel">{label}</span>
+      <span className="statRowDot">·</span>
+      <span className="statRowAddr">{shortAddress(address)}</span>
+      <span className="statRowDot">·</span>
+      <span className="statRowValue">{value}</span>
+    </div>
+  );
+}
+
 // Each bar is scaled against THIS home's submarket avg, not against the
 // other homes on the list. A home priced at the neighborhood average gets
 // a 50% bar. Below avg = longer, fuller green bar (better value). Above
 // avg = shorter, lighter bar (worse value).
-// Show only the #1 ranked home per category — the rest live in the ranked
-// table below. Bar is scaled against the winner's own submarket average:
-// parity = 50%, below-avg = longer green, above-avg = shorter slate.
-function ValueMetricRow({ label, winner, field, psfKey, unlockedHomes, psfByMarket }) {
-  const homes = unlockedHomes
-    .filter((h) => h.report?.[field] != null && !isNaN(Number(h.report[field])))
-    .map((h) => ({ ...h, _v: Number(h.report[field]) }))
-    .sort((a, b) => a._v - b._v);
-  if (homes.length === 0) {
-    return (
-      <div className="valueRow">
-        <div className="valueRowHeader">
-          <div className="valueRowLabel">{label}</div>
-        </div>
-      </div>
-    );
-  }
-
-  const top = homes[0];
-  const submarket = getMarketKey(top.report);
-  const entry = submarket && psfByMarket ? psfByMarket.get(submarket) : null;
-  const avg = entry ? entry[psfKey] || null : null;
-
-  let pct;
-  let below;
-  if (avg && avg > 0) {
-    const ratio = top._v / avg;
-    pct = Math.max(10, Math.min(100, Math.round(50 + (1 - ratio) * 50)));
-    below = top._v <= avg;
-  } else {
-    pct = 100;
-    below = true;
-  }
-
-  return (
-    <div className="valueRow">
-      <div className="valueRowHeader">
-        <div className="valueRowLabel">{label}</div>
-      </div>
-      <div className="valueBars">
-        <div className="valueBarRow">
-          <div className="valueBarLabel">
-            <span className="valueBarPsf">${Math.round(top._v).toLocaleString()}</span>
-            <span className="valueBarAddr">{shortAddress(top.address)}</span>
-          </div>
-          <div className="valueRaceBar">
-            <div
-              className={`valueRaceFill ${below ? "valueRaceFillBelow" : "valueRaceFillAbove"}`}
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Third row in Value Breakdown — surfaces the Best Land Play home (highest
-// land_arbitrage_score). Bar width is score/10 since the metric is bounded
-// to [0,10]. Notes are truncated to 8 words client-side as a safety net for
-// older rows; the prompt now requests short phrases natively.
-function LandPlayRow({ winner, unlockedHomes }) {
-  const homes = unlockedHomes
-    .filter(
-      (h) =>
-        h.report?.land_arbitrage_score != null &&
-        !isNaN(Number(h.report.land_arbitrage_score))
-    )
-    .map((h) => ({ ...h, _s: Number(h.report.land_arbitrage_score) }))
-    .sort((a, b) => b._s - a._s);
-  if (homes.length === 0) return null;
-  const top = homes[0];
-  const pct = Math.max(10, Math.min(100, Math.round((top._s / 10) * 100)));
-  return (
-    <div className="valueRow">
-      <div className="valueRowHeader">
-        <div className="valueRowLabel">Best Land Play</div>
-      </div>
-      <div className="valueBars">
-        <div className="valueBarRow">
-          <div className="valueBarLabel">
-            <span className="valueBarPsf">{top._s.toFixed(1)}/10</span>
-            <span className="valueBarAddr">{shortAddress(top.address)}</span>
-          </div>
-          <div className="valueRaceBar">
-            <div
-              className="valueRaceFill valueRaceFillBelow"
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /* ===================== CARD 3 — TRUE MONTHLY COST ===================== */
 
@@ -949,6 +841,11 @@ function TrueMonthlyCostCard({ unlockedHomes }) {
     .filter((h) => h.report?.estimated_monthly_total != null)
     .map((h) => ({ ...h, _m: Number(h.report.estimated_monthly_total) }))
     .sort((a, b) => a._m - b._m);
+
+  // Count all unlocked homes with tax reassessment risk so we can show a
+  // single summary line at the bottom of the card instead of an inline
+  // warning under every affected row.
+  const taxRiskCount = unlockedHomes.filter((h) => hasTaxRisk(h.report)).length;
 
   // Fallback for pre-schema-v4 reports: show offer range across the list
   // so the card still answers a useful question.
@@ -1049,7 +946,6 @@ function TrueMonthlyCostCard({ unlockedHomes }) {
           const taxPct = (tax / axis) * 100;
           const insPct = (ins / axis) * 100;
           const hoaPct = (hoa / axis) * 100;
-          const taxRisk = hasTaxRisk(r);
           return (
             <div key={h.id} className="monthlyRow">
               <div className="monthlyMeta">
@@ -1086,14 +982,6 @@ function TrueMonthlyCostCard({ unlockedHomes }) {
                   />
                 )}
               </div>
-              {taxRisk && (
-                <div
-                  className="taxFlag"
-                  title={`Projected taxes (${formatMoney(Number(r.annual_taxes_projected))}/yr) are >25% AND >$2,000/yr above current (${formatMoney(Number(r.annual_taxes_current))}/yr).`}
-                >
-                  ⚠ Tax reassessment risk
-                </div>
-              )}
             </div>
           );
         })}
@@ -1114,6 +1002,11 @@ function TrueMonthlyCostCard({ unlockedHomes }) {
           </span>
         )}
       </div>
+      {taxRiskCount > 0 && (
+        <div className="taxFlagSummary">
+          ⚠ {taxRiskCount} {taxRiskCount === 1 ? "home has" : "homes have"} tax reassessment risk
+        </div>
+      )}
       <div className="answerSubline">
         Estimates: 20% down, 6.8% 30yr fixed + projected post-sale tax reassessment.
       </div>
@@ -1145,6 +1038,7 @@ function RankedTable({
             <tr>
               <th className="rankedColRank">#</th>
               <th className="rankedColProp">Property</th>
+              <th>Size</th>
               <th>Asking</th>
               <th>Offer range</th>
               <th>Offer gap</th>
@@ -1222,6 +1116,20 @@ function RankedRow({
         {submarket && <span className="rankBadge">{submarket}</span>}
       </td>
       <td>
+        {unlocked && r.sqft ? (
+          <div className="rankSize">
+            <div className="rankSizeMain">{Number(r.sqft).toLocaleString()} sqft</div>
+            {r.lot_size_sqft ? (
+              <div className="rankSizeLot">
+                {Number(r.lot_size_sqft).toLocaleString()} sqft lot
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <span className="dashMuted">—</span>
+        )}
+      </td>
+      <td>
         <span className="rankAsk">{r.asking_price ? formatMoneyFull(r.asking_price) : "—"}</span>
       </td>
       <td>
@@ -1270,20 +1178,20 @@ function RankedRow({
             title={breakdownTooltip(r.score_breakdown, r.negotiability_score)}
           >
             <span className={`scoreDot scoreDot_${dot}`} />
-            {r.negotiability_score ?? "—"}
+            {formatScore(r.negotiability_score)}
           </span>
         ) : (
-          <span className="dashBlur">X.X</span>
+          <span className="dashBlur">X</span>
         )}
       </td>
       <td>
         {unlocked && r.land_arbitrage_score != null ? (
           <span
             className="rankScore"
-            title={r.land_arbitrage_notes || `Land arbitrage score ${r.land_arbitrage_score}/10`}
+            title={r.land_arbitrage_notes || `Land arbitrage score ${formatScore(r.land_arbitrage_score)}/10`}
           >
             <span className={`scoreDot scoreDot_${landDotColor(r.land_arbitrage_score)}`} />
-            {Number(r.land_arbitrage_score).toFixed(1)}
+            {formatScore(r.land_arbitrage_score)}
           </span>
         ) : (
           <span className="dashMuted">—</span>
@@ -1380,13 +1288,13 @@ function unlockLabel(home, credits, unlimited) {
 
 function breakdownTooltip(breakdown, score) {
   if (!breakdown || typeof breakdown !== "object") {
-    return score != null ? `Negotiability score ${score}/10` : "";
+    return score != null ? `Negotiability score ${formatScore(score)}/10` : "";
   }
   const parts = [];
-  if (breakdown.dom_score != null) parts.push(`DOM ${Number(breakdown.dom_score).toFixed(1)}/10`);
-  if (breakdown.price_cut_score != null) parts.push(`Cuts ${Number(breakdown.price_cut_score).toFixed(1)}/10`);
-  if (breakdown.zestimate_gap_score != null) parts.push(`Zestimate ${Number(breakdown.zestimate_gap_score).toFixed(1)}/10`);
-  if (breakdown.price_per_sqft_score != null) parts.push(`$/sqft ${Number(breakdown.price_per_sqft_score).toFixed(1)}/10`);
+  if (breakdown.dom_score != null) parts.push(`DOM ${formatScore(breakdown.dom_score)}/10`);
+  if (breakdown.price_cut_score != null) parts.push(`Cuts ${formatScore(breakdown.price_cut_score)}/10`);
+  if (breakdown.zestimate_gap_score != null) parts.push(`Zestimate ${formatScore(breakdown.zestimate_gap_score)}/10`);
+  if (breakdown.price_per_sqft_score != null) parts.push(`$/sqft ${formatScore(breakdown.price_per_sqft_score)}/10`);
   return parts.join(" · ");
 }
 
@@ -1511,7 +1419,7 @@ function InlineCompare({ comparing, onRemove, onClear }) {
               cells={comparing.map((h) => `${formatMoney(h.report.offer_low)}–${formatMoney(h.report.offer_high)}`)}
               accent
             />
-            <CompareRow label="Negotiability" cells={comparing.map((h) => `${h.report.negotiability_score} / 10`)} />
+            <CompareRow label="Negotiability" cells={comparing.map((h) => `${formatScore(h.report.negotiability_score)} / 10`)} />
             <CompareRow
               label="Land Arbitrage"
               cells={comparing.map((h) => {
@@ -1519,7 +1427,7 @@ function InlineCompare({ comparing, onRemove, onClear }) {
                 if (s == null) return "—";
                 return (
                   <div key={h.id}>
-                    <div>{Number(s).toFixed(1)} / 10</div>
+                    <div>{formatScore(s)} / 10</div>
                     {h.report.land_arbitrage_notes && (
                       <div className="compareLandNotes">
                         {h.report.land_arbitrage_notes}
