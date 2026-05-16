@@ -204,6 +204,48 @@ function dotColorForScore(score) {
   return "red";
 }
 
+// Parse the most recent cut from cut_history. Strings are formatted as
+// "$X → $Y (Month YYYY)" or similar — see SYSTEM_PROMPT. Returns null
+// if nothing parseable. Handles upward moves too (rare but possible).
+function parseLatestPriceChange(report) {
+  const history = report?.data?.cut_history || report?.cut_history || [];
+  if (!Array.isArray(history) || history.length === 0) return null;
+  const latest = String(history[history.length - 1] || "");
+  const m = latest.match(/\$?([\d,]+)\s*[→\-]+\s*\$?([\d,]+).*\(([^)]+)\)/);
+  if (!m) return null;
+  const oldPrice = parseInt(m[1].replace(/,/g, ""), 10);
+  const newPrice = parseInt(m[2].replace(/,/g, ""), 10);
+  const when = m[3].trim();
+  if (!oldPrice || !newPrice) return null;
+  return {
+    oldPrice,
+    newPrice,
+    delta: newPrice - oldPrice,
+    when,
+  };
+}
+
+function formatShortDollars(n) {
+  const v = Math.abs(Number(n) || 0);
+  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
+  if (v >= 1_000) return `$${Math.round(v / 1_000)}K`;
+  return `$${v}`;
+}
+
+// "May 16" / "May 2025" — short date for "Analysis updated" line.
+function formatShortDate(timestamp) {
+  if (!timestamp) return null;
+  const d = new Date(timestamp);
+  if (isNaN(d.getTime())) return null;
+  const now = new Date();
+  const sameYear = d.getFullYear() === now.getFullYear();
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    ...(sameYear ? {} : { year: "numeric" }),
+  });
+}
+
 // Returns relative-time string for the Property cell ("3 days ago", etc.).
 function savedAgo(timestamp) {
   if (!timestamp) return null;
@@ -1089,13 +1131,10 @@ function BestDealCard({ home }) {
         <div className="bestDealStat">
           {ceilingRisk ? (
             <HoverTooltip title={CEILING_TOOLTIP_TITLE} body={CEILING_TOOLTIP_BODY}>
-              <span className="answerCeilingWrap">
-                <span className="answerBigStat answerStatAmber">
-                  {ceilingPct != null
-                    ? `~${ceilingPct.toFixed(0)}% below ask`
-                    : "Est. floor"}
-                </span>
-                <span className="answerCeilingBadge">⚠ Outlier</span>
+              <span className="answerBigStat answerStatAmber">
+                {ceilingPct != null
+                  ? `~${ceilingPct.toFixed(0)}% below ask`
+                  : "Est. floor"}
               </span>
             </HoverTooltip>
           ) : (
@@ -1114,21 +1153,22 @@ function BestDealCard({ home }) {
         const ns = nextStepFor(score, r.days_on_market);
         if (!ns) return null;
         return (
-          <div className="bestDealNextStep">
-            <span className="bestDealNextStepLabel">Next step:</span>{" "}
-            <span>{ns.label}</span>
-            {ns.linkLabel && (
-              <>
-                {" — "}
-                <Link
-                  href={`/dashboard/${encodeAddress(home.address)}`}
-                  className="bestDealNextStepLink"
-                >
-                  {ns.linkLabel} →
-                </Link>
-              </>
-            )}
-          </div>
+          <p className="bestDealNextStep">
+            <em>
+              Next step: {ns.label}
+              {ns.linkLabel && (
+                <>
+                  {" — "}
+                  <Link
+                    href={`/dashboard/${encodeAddress(home.address)}`}
+                    className="bestDealNextStepLink"
+                  >
+                    {ns.linkLabel} →
+                  </Link>
+                </>
+              )}
+            </em>
+          </p>
         );
       })()}
       <div className="bestDealSignals">
@@ -1152,7 +1192,7 @@ function BestDealCard({ home }) {
 
 /* ===================== CARD 2 — VALUE BREAKDOWN with race bars ===================== */
 
-function ValueBreakdownCard({ unlockedHomes, psfByMarket }) {
+function ValueBreakdownCard({ unlockedHomes }) {
   if (unlockedHomes.length === 0) {
     return (
       <EmptyAnswerCard
@@ -1162,19 +1202,35 @@ function ValueBreakdownCard({ unlockedHomes, psfByMarket }) {
     );
   }
 
-  const livingHomes = unlockedHomes
+  // For each category, pick the SINGLE winner across the user's list:
+  //   - cheapest $/sqft living
+  //   - cheapest $/sqft lot
+  //   - highest land arbitrage score (land play)
+  const livingWinner = unlockedHomes
     .filter((h) => Number(h.report?.price_per_living_sqft) > 0)
-    .map((h) => ({ ...h, _v: Number(h.report.price_per_living_sqft) }))
-    .sort((a, b) => a._v - b._v)
-    .slice(0, MAX_BARS_PER_CARD);
+    .reduce((best, h) => {
+      const v = Number(h.report.price_per_living_sqft);
+      if (!best || v < best.v) return { home: h, v };
+      return best;
+    }, null);
 
-  const lotHomes = unlockedHomes
+  const lotWinner = unlockedHomes
     .filter((h) => Number(h.report?.price_per_lot_sqft) > 0)
-    .map((h) => ({ ...h, _v: Number(h.report.price_per_lot_sqft) }))
-    .sort((a, b) => a._v - b._v)
-    .slice(0, MAX_BARS_PER_CARD);
+    .reduce((best, h) => {
+      const v = Number(h.report.price_per_lot_sqft);
+      if (!best || v < best.v) return { home: h, v };
+      return best;
+    }, null);
 
-  if (livingHomes.length === 0 && lotHomes.length === 0) {
+  const landWinner = unlockedHomes
+    .filter((h) => Number(h.report?.land_arbitrage_score) > 0)
+    .reduce((best, h) => {
+      const v = Number(h.report.land_arbitrage_score);
+      if (!best || v > best.v) return { home: h, v };
+      return best;
+    }, null);
+
+  if (!livingWinner && !lotWinner && !landWinner) {
     return (
       <AnswerCardShell kicker="Value Breakdown">
         <div className="answerEmpty">
@@ -1189,11 +1245,26 @@ function ValueBreakdownCard({ unlockedHomes, psfByMarket }) {
 
   return (
     <AnswerCardShell kicker="Value Breakdown">
-      {livingHomes.length > 0 && (
-        <ValueBarSection label="$/sqft living" homes={livingHomes} />
+      {livingWinner && (
+        <ValueWinnerRow
+          label="$/sqft living"
+          home={livingWinner.home}
+          value={`$${Math.round(livingWinner.v).toLocaleString()}`}
+        />
       )}
-      {lotHomes.length > 0 && (
-        <ValueBarSection label="$/sqft lot" homes={lotHomes} />
+      {lotWinner && (
+        <ValueWinnerRow
+          label="$/sqft lot"
+          home={lotWinner.home}
+          value={`$${Math.round(lotWinner.v).toLocaleString()}`}
+        />
+      )}
+      {landWinner && (
+        <ValueWinnerRow
+          label="Land play"
+          home={landWinner.home}
+          value={`${formatFinalScore(landWinner.v)}/10`}
+        />
       )}
       <a href="#ranked-homes" className="answerLink valueFullLink">
         Full breakdown →
@@ -1202,38 +1273,19 @@ function ValueBreakdownCard({ unlockedHomes, psfByMarket }) {
   );
 }
 
-// Per-home bar list comparing $/sqft WITHIN the user's list: cheapest gets
-// the fullest green bar, most expensive gets the shortest gray bar. Bars
-// scale linearly by (min / value). Color split at the price midpoint so
-// the cheaper half reads green and the pricier half reads slate.
-function ValueBarSection({ label, homes }) {
-  const min = homes[0]._v;
-  const max = homes[homes.length - 1]._v;
-  const midpoint = (min + max) / 2;
+// One stat row per category: label, the winning address, the value as
+// a green full bar. Mirrors the layout of the True Monthly Cost rows
+// so all three cards read consistently.
+function ValueWinnerRow({ label, home, value }) {
   return (
-    <div className="valueBarSection">
-      <div className="valueSectionLabel">{label}</div>
-      <div className="valueBarRows">
-        {homes.map((h) => {
-          const pct = Math.max(10, Math.min(100, Math.round((min / h._v) * 100)));
-          const below = h._v <= midpoint;
-          return (
-            <div key={h.id} className="monthlyRow">
-              <div className="monthlyMeta">
-                <span className="monthlyAddr">{shortAddress(h.address)}</span>
-                <span className="monthlyVal">
-                  ${Math.round(h._v).toLocaleString()}
-                </span>
-              </div>
-              <div className="monthlyBar">
-                <div
-                  className={`monthlyBarSeg ${below ? "valueSegBelow" : "valueSegAbove"}`}
-                  style={{ width: `${pct}%` }}
-                />
-              </div>
-            </div>
-          );
-        })}
+    <div className="valueWinnerRow">
+      <div className="valueWinnerMeta">
+        <span className="valueWinnerLabel">{label}</span>
+        <span className="valueWinnerValue">{value}</span>
+      </div>
+      <div className="valueWinnerAddr">{shortAddress(home.address)}</div>
+      <div className="monthlyBar">
+        <div className="monthlyBarSeg valueSegBelow" style={{ width: "100%" }} />
       </div>
     </div>
   );
@@ -1526,18 +1578,30 @@ function RankedTable({
               <SortHeader label="Asking"      sortKey="asking"        activeKey={sortKey} dir={sortDir} onSort={onSort} />
               <SortHeader label="Offer range" sortKey="offer_range"   activeKey={sortKey} dir={sortDir} onSort={onSort} className="rankedColOfferRange" />
               <SortHeader label="Gap %"       sortKey="offer_gap_pct" activeKey={sortKey} dir={sortDir} onSort={onSort} className="rankedColGapPct" />
-              <SortHeader label="Gap $"       sortKey="offer_gap"     activeKey={sortKey} dir={sortDir} onSort={onSort} className="rankedColGapDollar" />
-              <SortHeader label="Home sqft"   sortKey="home_sqft"     activeKey={sortKey} dir={sortDir} onSort={onSort} />
-              <SortHeader label="Lot sqft"    sortKey="lot_sqft"      activeKey={sortKey} dir={sortDir} onSort={onSort} />
               <SortHeader label="$/sqft"      sortKey="psf"           activeKey={sortKey} dir={sortDir} onSort={onSort} />
               <SortHeader label="$/lot"       sortKey="lot_psf"       activeKey={sortKey} dir={sortDir} onSort={onSort} />
-              <SortHeader label="Score"       sortKey="score"         activeKey={sortKey} dir={sortDir} onSort={onSort} />
-              <SortHeader label="Land"        sortKey="land"          activeKey={sortKey} dir={sortDir} onSort={onSort} />
+              <SortHeader
+                label={
+                  <>
+                    Score{" "}
+                    <HoverTooltip
+                      title="Negotiability Score (1–10)"
+                      body="Weighted combination of days on market, price-cut history, comp $/sqft gap, Zestimate gap, and listing-language signals. 7+ = strong leverage. 4–6 = moderate. Below 4 = limited room."
+                    >
+                      <span className="colInfoIcon" onClick={(e) => e.stopPropagation()}>ⓘ</span>
+                    </HoverTooltip>
+                  </>
+                }
+                sortKey="score"
+                activeKey={sortKey}
+                dir={sortDir}
+                onSort={onSort}
+              />
               <SortHeader label="DOM"         sortKey="dom"           activeKey={sortKey} dir={sortDir} onSort={onSort} />
               <SortHeader label="Monthly"     sortKey="monthly"       activeKey={sortKey} dir={sortDir} onSort={onSort} />
               <th className="rankedColDeal">Deal</th>
-              <th className="rankedColCompare">Compare</th>
               <th className="rankedColView"></th>
+              <th className="rankedColRefresh"></th>
               <th className="rankedColRemove"></th>
             </tr>
           </thead>
@@ -1572,6 +1636,9 @@ function RankedTable({
           </tbody>
         </table>
       </div>
+      <p className="rankedScoreLegend">
+        Negotiability scores reflect DOM, price history, comp gap, and listing signals. 7+ = strong leverage. 4–6 = moderate. Below 4 = limited room.
+      </p>
     </div>
   );
 }
@@ -1634,9 +1701,29 @@ function RankedRow({
             </a>
           )}
         </div>
-        {home.created_at && (
-          <div className="rankPropSaved">
-            Saved {savedAgo(home.created_at)}
+        {(() => {
+          const change = unlocked ? parseLatestPriceChange(r) : null;
+          if (change && change.delta !== 0) {
+            const isCut = change.delta < 0;
+            return (
+              <div
+                className={`rankPropPriceChange ${isCut ? "priceChangeCut" : "priceChangeUp"}`}
+                title={`${formatMoney(change.oldPrice)} → ${formatMoney(change.newPrice)}`}
+              >
+                {isCut ? "↓" : "↑"} {isCut ? "cut" : "raised"} {formatShortDollars(change.delta)} {change.when}
+              </div>
+            );
+          }
+          if (home.created_at) {
+            return (
+              <div className="rankPropSaved">Saved {savedAgo(home.created_at)}</div>
+            );
+          }
+          return null;
+        })()}
+        {unlocked && r.generated_at && (
+          <div className="rankPropUpdated">
+            Analysis updated {formatShortDate(r.generated_at)}
           </div>
         )}
       </td>
@@ -1659,8 +1746,8 @@ function RankedRow({
           <span className="dashBlur">$X,XXX,XXX</span>
         )}
       </td>
-      {unlocked && ceilingRisk ? (
-        <td className="rankedColCeiling" colSpan={2}>
+      <td className="rankedColGapPct">
+        {unlocked && ceilingRisk ? (
           <HoverTooltip title={CEILING_TOOLTIP_TITLE} body={CEILING_TOOLTIP_BODY}>
             <span className="rankCeilingFloor">
               {ceilingFloorPct != null
@@ -1668,39 +1755,12 @@ function RankedRow({
                 : "Est. floor"}
             </span>
           </HoverTooltip>
-        </td>
-      ) : (
-        <>
-          <td className="rankedColGapPct">
-            {unlocked && home.savings != null && r.asking_price ? (
-              <span className="rankGapPctSolo">
-                {((home.savings / r.asking_price) * 100).toFixed(1)}%
-              </span>
-            ) : (
-              <span className="dashBlur">XX%</span>
-            )}
-          </td>
-          <td className="rankedColGapDollar">
-            {unlocked && home.savings != null ? (
-              <span className="rankGapDollarSolo">{formatMoney(home.savings)}</span>
-            ) : (
-              <span className="dashBlur">$XXK</span>
-            )}
-          </td>
-        </>
-      )}
-      <td>
-        {unlocked && r.sqft ? (
-          <span className="rankSizeMain">{Number(r.sqft).toLocaleString()}</span>
+        ) : unlocked && home.savings != null && r.asking_price ? (
+          <span className="rankGapPctSolo">
+            {((home.savings / r.asking_price) * 100).toFixed(1)}%
+          </span>
         ) : (
-          <span className="dashMuted">—</span>
-        )}
-      </td>
-      <td>
-        {unlocked && r.lot_size_sqft ? (
-          <span className="rankSizeMain">{Number(r.lot_size_sqft).toLocaleString()}</span>
-        ) : (
-          <span className="dashMuted">—</span>
+          <span className="dashBlur">XX%</span>
         )}
       </td>
       <td>
@@ -1737,21 +1797,6 @@ function RankedRow({
         )}
       </td>
       <td>
-        {unlocked && r.land_arbitrage_score != null ? (
-          <HoverTooltip
-            title="Land arbitrage"
-            body={<LandTooltipBody />}
-          >
-            <span className="rankScore">
-              <span className={`scoreDot scoreDot_${landDotColor(r.land_arbitrage_score)}`} />
-              {formatFinalScore(r.land_arbitrage_score)}
-            </span>
-          </HoverTooltip>
-        ) : (
-          <span className="dashMuted">—</span>
-        )}
-      </td>
-      <td>
         {unlocked ? <span className="rankDom">{r.days_on_market ?? "—"}</span> : <span className="dashBlur">XXX</span>}
       </td>
       <td>
@@ -1780,34 +1825,11 @@ function RankedRow({
           <span className="dashBlur">▬▬▬</span>
         )}
       </td>
-      <td className="rankedColCompare">
-        {unlocked && (
-          <label className="rankCheckLabel" title="Add to comparison">
-            <input type="checkbox" checked={selected} onChange={onToggleCompare} className="rankCheck" />
-          </label>
-        )}
-      </td>
       <td className="rankedColView">
         {unlocked ? (
-          <span className="rankViewWrap">
-            <Link href={`/dashboard/${encodeAddress(home.address)}`} className="rankViewBtn">
-              View →
-            </Link>
-            <button
-              type="button"
-              className="rankRefreshBtn"
-              onClick={onReanalyze}
-              disabled={pending || !home.listing_url}
-              title={
-                !home.listing_url
-                  ? "Need a listing URL to re-analyze"
-                  : "Re-run Claude analysis with fresh data"
-              }
-              aria-label="Re-analyze this home"
-            >
-              <RefreshIcon />
-            </button>
-          </span>
+          <Link href={`/dashboard/${encodeAddress(home.address)}`} className="rankViewBtn">
+            View →
+          </Link>
         ) : analyzing ? (
           <span className="rankAnalyzingBadge" aria-live="polite" title="Claude is analyzing this listing — should complete within ~60s">
             <span className="rankAnalyzingSpinner" />
@@ -1837,6 +1859,24 @@ function RankedRow({
           <button type="button" className="rankUnlockBtn" onClick={onUnlock} disabled={pending}>
             <LockIcon size={11} />
             {pending ? "..." : unlockLabel(home, credits, unlimited)}
+          </button>
+        )}
+      </td>
+      <td className="rankedColRefresh">
+        {unlocked && (
+          <button
+            type="button"
+            className="rankRefreshBtn"
+            onClick={onReanalyze}
+            disabled={pending || !home.listing_url}
+            title={
+              !home.listing_url
+                ? "Need a listing URL to re-analyze"
+                : "Re-run Claude analysis with fresh data"
+            }
+            aria-label="Re-analyze this home"
+          >
+            <RefreshIcon />
           </button>
         )}
       </td>
