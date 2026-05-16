@@ -1,7 +1,7 @@
 import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import DashboardHeader from "../../components/DashboardHeader";
 import { getSupabaseClient } from "../../lib/supabase-client";
 import {
@@ -12,7 +12,14 @@ import {
   formatMoneyFull,
   formatPercent,
 } from "../../lib/scoring";
-import { pickUpsell, timelineFor } from "../../lib/market-intel";
+import {
+  pickUpsell,
+  timelineFor,
+  getMarketKey,
+  temperatureFor,
+} from "../../lib/market-intel";
+
+const MAX_COMPARE = 4;
 
 function encodeAddress(addr) {
   return encodeURIComponent(addr);
@@ -27,6 +34,18 @@ function LockIcon({ size = 14 }) {
   );
 }
 
+function signalColorForScore(score) {
+  if (score == null) return "muted";
+  if (score >= 7) return "green";
+  if (score >= 5) return "amber";
+  return "red";
+}
+
+function buySignalForScore(score) {
+  if (score == null) return null;
+  return score >= 7 ? "buy" : "monitor";
+}
+
 export default function Dashboard() {
   const router = useRouter();
   const [user, setUser] = useState(null);
@@ -34,10 +53,12 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [homes, setHomes] = useState([]);
   const [plan, setPlan] = useState({ credits_remaining: 0, is_unlimited: false });
-  const [market, setMarket] = useState([]);
+  const [markets, setMarkets] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
   const [notice, setNotice] = useState(null);
   const [pendingAddress, setPendingAddress] = useState(null);
+  const [selectedCompare, setSelectedCompare] = useState(() => new Set());
+  const [compareLimitMessage, setCompareLimitMessage] = useState(false);
 
   useEffect(() => {
     const sb = getSupabaseClient();
@@ -72,7 +93,7 @@ export default function Dashboard() {
       const marketJson = await marketRes.json();
       setHomes(listJson.homes || []);
       setPlan(listJson.plan || { credits_remaining: 0, is_unlimited: false });
-      setMarket(marketJson.neighborhoods || []);
+      setMarkets(marketJson.markets || marketJson.neighborhoods || []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -104,6 +125,17 @@ export default function Dashboard() {
     }
   }, [router]);
 
+  // Drop any compare selections for homes that disappear or get locked.
+  useEffect(() => {
+    setSelectedCompare((prev) => {
+      const next = new Set();
+      for (const h of homes) {
+        if (prev.has(h.id) && h.has_access && h.report) next.add(h.id);
+      }
+      return next.size === prev.size ? prev : next;
+    });
+  }, [homes]);
+
   async function handleRemove(id) {
     if (!token) return;
     if (!confirm("Remove this home from your saved list?")) return;
@@ -115,8 +147,6 @@ export default function Dashboard() {
     loadAll(token);
   }
 
-  // Try to unlock without payment (credits or unlimited).
-  // If no credits available, fall back to single-report checkout.
   async function handleUnlock(home) {
     if (!token) return;
     setPendingAddress(home.address);
@@ -132,7 +162,6 @@ export default function Dashboard() {
         setPendingAddress(null);
         return;
       }
-      // No credits — go to Stripe single-report checkout.
       const r2 = await fetch("/api/dashboard/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -160,17 +189,41 @@ export default function Dashboard() {
     else alert(j.error || "Could not start checkout");
   }
 
-  // Sort and rank
-  const homesForRanking = homes.map((h) => ({
-    ...h,
-    report: h.has_access ? h.report : null,
-  }));
-  const ranked = rankHomes(homesForRanking);
+  function toggleCompare(homeId) {
+    setSelectedCompare((prev) => {
+      const next = new Set(prev);
+      if (next.has(homeId)) {
+        next.delete(homeId);
+        return next;
+      }
+      if (next.size >= MAX_COMPARE) {
+        setCompareLimitMessage(true);
+        setTimeout(() => setCompareLimitMessage(false), 4000);
+        return prev;
+      }
+      next.add(homeId);
+      return next;
+    });
+  }
+
+  function clearCompare() {
+    setSelectedCompare(new Set());
+  }
+
+  const homesForRanking = useMemo(
+    () => homes.map((h) => ({ ...h, report: h.has_access ? h.report : null })),
+    [homes]
+  );
+  const ranked = useMemo(() => rankHomes(homesForRanking), [homesForRanking]);
   const topRanked = ranked.find((h) => h.scoring);
   const topExplanation = topRanked ? explainBestValue(topRanked, topRanked.scoring) : null;
-
   const timeline = timelineFor(homesForRanking);
   const upsell = !plan.is_unlimited ? pickUpsell(homes.length) : null;
+
+  const comparing = useMemo(
+    () => ranked.filter((h) => selectedCompare.has(h.id) && h.has_access && h.report),
+    [ranked, selectedCompare]
+  );
 
   return (
     <>
@@ -200,7 +253,7 @@ export default function Dashboard() {
                 ? "Unlimited access activated — all your saved homes are unlocked."
                 : notice.purchasedPlan === "pack5"
                 ? "5 report credits added. Tap Unlock on any saved home to spend one."
-                : `Payment received. Your report${notice.address ? ` for ${notice.address}` : ""} is being prepared — we’ll email you when it’s ready.`}
+                : `Payment received. Your report${notice.address ? ` for ${notice.address}` : ""} is being prepared — we'll email you when it's ready.`}
             </div>
           )}
           {notice?.kind === "canceled" && (
@@ -225,16 +278,12 @@ export default function Dashboard() {
             />
           )}
 
-          {upsell && (
-            <UpsellBanner upsell={upsell} onClick={() => startPlanCheckout(upsell.plan)} />
+          {markets.length > 0 && (
+            <MarketIntelligenceSection markets={markets} />
           )}
 
-          {ranked.length >= 2 && (
-            <div className="dashCompareRow">
-              <Link href="/dashboard/compare" className="dashCompareBtn">
-                Compare homes side-by-side →
-              </Link>
-            </div>
+          {upsell && (
+            <UpsellBanner upsell={upsell} onClick={() => startPlanCheckout(upsell.plan)} />
           )}
 
           <div className="dashGrid">
@@ -251,21 +300,26 @@ export default function Dashboard() {
                 pending={pendingAddress === h.address}
                 credits={plan.credits_remaining}
                 unlimited={plan.is_unlimited}
+                selected={selectedCompare.has(h.id)}
+                onToggleCompare={() => toggleCompare(h.id)}
                 onRemove={() => handleRemove(h.id)}
                 onUnlock={() => handleUnlock(h)}
               />
             ))}
           </div>
 
-          {market.length > 0 && (
-            <>
-              <h2 className="dashMarketHeading">Market intelligence</h2>
-              <div className="dashMarketGrid">
-                {market.map((m) => (
-                  <MarketCard key={m.neighborhood} item={m} />
-                ))}
-              </div>
-            </>
+          {compareLimitMessage && (
+            <div className="compareLimitNote" role="status">
+              Compare up to {MAX_COMPARE} homes at a time.
+            </div>
+          )}
+
+          {comparing.length >= 2 && (
+            <InlineCompare
+              comparing={comparing}
+              onRemove={(id) => toggleCompare(id)}
+              onClear={clearCompare}
+            />
           )}
         </main>
       </div>
@@ -277,16 +331,6 @@ export default function Dashboard() {
           onSaved={() => {
             setShowAdd(false);
             loadAll(token);
-          }}
-          onPurchase={async (address, listing_url) => {
-            setShowAdd(false);
-            const r = await fetch("/api/dashboard/checkout", {
-              method: "POST",
-              headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-              body: JSON.stringify({ plan: "single", address, listing_url }),
-            });
-            const json = await r.json();
-            if (json.url) window.location.href = json.url;
           }}
         />
       )}
@@ -314,7 +358,7 @@ function TimelineStrip({ timeline, credits, unlimited }) {
           {timeline.home_count} home{timeline.home_count === 1 ? "" : "s"}
         </div>
         <div className="dashTimelineSub">
-          across {timeline.neighborhood_count || 0} neighborhood
+          across {timeline.neighborhood_count || 0} submarket
           {timeline.neighborhood_count === 1 ? "" : "s"}
         </div>
       </div>
@@ -342,23 +386,28 @@ function TimelineStrip({ timeline, credits, unlimited }) {
 }
 
 function BestValueHero({ home, scoring, explanation }) {
+  const r = home.report;
+  const signal = buySignalForScore(r.negotiability_score);
   return (
     <div className="dashBest">
-      <div className="dashBestTag">⭐ Best value</div>
+      <div className="dashBestTopRow">
+        <span className="dashBestTag">⭐ Best value</span>
+        {signal && (
+          <span className={`dashBestPill dashBestPill_${signal}`}>
+            {signal === "buy" ? "BUY SIGNAL" : "MONITOR"}
+          </span>
+        )}
+      </div>
       <Link href={`/dashboard/${encodeAddress(home.address)}`} className="dashBestAddress">
         {home.address}
       </Link>
-      <div className="dashBestPrices">
-        <div>
-          <div className="dashBestKicker">Asking</div>
-          <div>{formatMoneyFull(home.report.asking_price)}</div>
+      <div className="dashBestPriceBlock">
+        <div className="dashBestListLine">
+          LIST PRICE · <span>{formatMoneyFull(r.asking_price)}</span>
         </div>
-        <div className="dashBestArrow">→</div>
-        <div>
-          <div className="dashBestKicker">Likely purchase</div>
-          <div className="dashBestPurchase">
-            {formatMoney(home.report.offer_low)}–{formatMoney(home.report.offer_high)}
-          </div>
+        <div className="dashBestOfferLabel">YOUR LIKELY PURCHASE</div>
+        <div className="dashBestOfferRange">
+          {formatMoneyFull(r.offer_low)} – {formatMoneyFull(r.offer_high)}
         </div>
       </div>
       <div className="dashBestUpsideRow">
@@ -371,6 +420,67 @@ function BestValueHero({ home, scoring, explanation }) {
       <Link href={`/dashboard/${encodeAddress(home.address)}`} className="dashBestCta">
         View full report →
       </Link>
+    </div>
+  );
+}
+
+function MarketIntelligenceSection({ markets }) {
+  return (
+    <section className="dashMarketSection">
+      <h2 className="dashMarketHeading">Market intelligence</h2>
+      <div className="dashMarketGrid">
+        {markets.map((m) => (
+          <MarketCard key={m.market || m.neighborhood} item={m} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function MarketCard({ item }) {
+  const name = item.market || item.neighborhood;
+  const s = item.summary;
+  const saved = item.saved_count ?? 0;
+  if (!s) {
+    return (
+      <div className="dashMarketCard">
+        <div className="dashMarketName">{name}</div>
+        <div className="dashMarketEmpty">Not enough comp data yet.</div>
+      </div>
+    );
+  }
+  const temp = s.temperature || temperatureFor(s);
+  const tempClass =
+    temp === "Hot"
+      ? "hot"
+      : temp === "Buyer's Market"
+      ? "buyers"
+      : "neutral";
+  return (
+    <div className="dashMarketCard">
+      <div className="dashMarketHeaderRow">
+        <div className="dashMarketName">{name}</div>
+        <span className={`dashMarketBadge dashMarketBadge_${tempClass}`}>
+          {temp}
+        </span>
+      </div>
+      <div className="dashMarketRow">
+        <div>
+          <div className="dashCardKicker">Avg DOM</div>
+          <strong>{s.avg_dom}</strong>
+        </div>
+        <div>
+          <div className="dashCardKicker">Typical off-list</div>
+          <strong>{s.avg_discount_pct}%</strong>
+        </div>
+        <div>
+          <div className="dashCardKicker">Saved here</div>
+          <strong>{saved}</strong>
+        </div>
+      </div>
+      <div className="dashMarketSample">
+        Based on {s.sample_size} report{s.sample_size === 1 ? "" : "s"}
+      </div>
     </div>
   );
 }
@@ -391,36 +501,52 @@ function UpsellBanner({ upsell, onClick }) {
   );
 }
 
-function HomeCard({ home, pending, credits, unlimited, onRemove, onUnlock }) {
-  const scoring = home.has_access && home.report ? scoreReport(home.report) : null;
+function HomeCard({ home, pending, credits, unlimited, selected, onToggleCompare, onRemove, onUnlock }) {
   const r = home.report || {};
   const unlocked = home.has_access && home.report;
+  const scoring = unlocked ? scoreReport(r) : null;
+  const submarket = getMarketKey(r);
+  const signal = unlocked ? signalColorForScore(r.negotiability_score) : "muted";
 
   return (
-    <div className={`dashCard${unlocked ? "" : " dashCardLocked"}`}>
-      <div className="dashCardTop">
-        <Link href={`/dashboard/${encodeAddress(home.address)}`} className="dashCardAddress">
-          {home.address}
-        </Link>
-        <button className="dashCardRemove" onClick={onRemove} aria-label="Remove">×</button>
+    <div className={`dashCard dashCard_${signal}${unlocked ? "" : " dashCardLocked"}`}>
+      <div className="dashCardHeaderRow">
+        {submarket ? (
+          <span className="dashSubmarketBadge">{submarket}</span>
+        ) : (
+          <span className="dashSubmarketBadge dashSubmarketBadgeMuted">—</span>
+        )}
+        {unlocked ? (
+          <label className="dashCompareCheck">
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={onToggleCompare}
+            />
+            <span>Compare</span>
+          </label>
+        ) : (
+          <button className="dashCardRemove" onClick={onRemove} aria-label="Remove">×</button>
+        )}
       </div>
 
-      {/* Address + asking price are always visible; rest is freemium-blurred when locked */}
-      <div className="dashCardPriceRow">
-        <div>
-          <div className="dashCardKicker">Asking</div>
-          <div className="dashCardPrice">{r.asking_price ? formatMoney(r.asking_price) : "—"}</div>
-        </div>
-        <div className="dashCardOffer">
-          <div className="dashCardKicker">Your offer</div>
-          {unlocked ? (
-            <div className="dashCardOfferVal">
-              {formatMoney(r.offer_low)}–{formatMoney(r.offer_high)}
-            </div>
-          ) : (
-            <div className="dashCardOfferVal dashBlur">$1,XXX,000–$1,XXX,000</div>
-          )}
-        </div>
+      <Link href={`/dashboard/${encodeAddress(home.address)}`} className="dashCardAddress">
+        {home.address}
+      </Link>
+
+      <div className="dashCardAsking">
+        {r.asking_price ? formatMoneyFull(r.asking_price) : "—"}
+      </div>
+
+      <div className="dashCardOfferRow">
+        <span className="dashCardKicker">Your offer</span>
+        {unlocked ? (
+          <span className="dashCardOfferVal">
+            {formatMoney(r.offer_low)}–{formatMoney(r.offer_high)}
+          </span>
+        ) : (
+          <span className="dashCardOfferVal dashBlur">$1,XXX,000–$1,XXX,000</span>
+        )}
       </div>
 
       <div className="dashCardStats">
@@ -439,32 +565,36 @@ function HomeCard({ home, pending, credits, unlimited, onRemove, onUnlock }) {
       </div>
 
       <div className="dashCardFooter">
-        {r.neighborhood ? (
-          <span className="dashCardNeigh">{r.neighborhood}</span>
-        ) : (
-          <span className="dashCardNeigh">&nbsp;</span>
-        )}
         {unlocked ? (
-          <Link href={`/dashboard/${encodeAddress(home.address)}`} className="dashCardLink">
-            View report →
-          </Link>
+          <>
+            <button
+              type="button"
+              className="dashCardSecondary"
+              onClick={onRemove}
+              aria-label="Remove home"
+            >
+              Remove
+            </button>
+            <Link href={`/dashboard/${encodeAddress(home.address)}`} className="dashCardLink">
+              View report →
+            </Link>
+          </>
         ) : (
-          <button
-            type="button"
-            className="dashCardCta dashCardCtaSm"
-            onClick={onUnlock}
-            disabled={pending}
-          >
-            <LockIcon /> {pending ? "Unlocking…" : unlockLabel(home, credits, unlimited)}
-          </button>
+          <>
+            <span className="dashCardLockHint">
+              <LockIcon size={11} /> unlock to compare
+            </span>
+            <button
+              type="button"
+              className="dashCardCta dashCardCtaSm"
+              onClick={onUnlock}
+              disabled={pending}
+            >
+              <LockIcon /> {pending ? "Unlocking…" : unlockLabel(home, credits, unlimited)}
+            </button>
+          </>
         )}
       </div>
-
-      {!unlocked && (
-        <div className="dashCardLockHint">
-          <LockIcon size={11} /> unlock to see full analysis
-        </div>
-      )}
     </div>
   );
 }
@@ -476,42 +606,107 @@ function unlockLabel(home, credits, unlimited) {
   return "Unlock · $19.99";
 }
 
-function MarketCard({ item }) {
-  const s = item.summary;
-  if (!s) {
-    return (
-      <div className="dashMarketCard">
-        <div className="dashMarketName">{item.neighborhood}</div>
-        <div className="dashMarketEmpty">Not enough comp data yet.</div>
-      </div>
-    );
-  }
-  const momentumClass =
-    s.momentum === "Heating Up" ? "hot" : s.momentum === "Cooling Down" ? "cool" : "neutral";
+function InlineCompare({ comparing, onRemove, onClear }) {
   return (
-    <div className="dashMarketCard">
-      <div className="dashMarketName">{item.neighborhood}</div>
-      <div className={`dashMarketBadge dashMarketBadge_${momentumClass}`}>{s.momentum}</div>
-      <div className="dashMarketRow">
-        <div>
-          <div className="dashCardKicker">Avg DOM</div>
-          <strong>{s.avg_dom}</strong>
-        </div>
-        <div>
-          <div className="dashCardKicker">Typical discount</div>
-          <strong>{s.avg_discount_pct}%</strong>
-        </div>
-        <div>
-          <div className="dashCardKicker">Price cuts</div>
-          <strong>{s.typical_price_cuts}</strong>
-        </div>
+    <section className="compareInline" aria-label="Comparison">
+      <div className="compareInlineHeader">
+        <h2 className="compareInlineTitle">
+          Comparing {comparing.length} home{comparing.length === 1 ? "" : "s"}
+        </h2>
+        <button type="button" className="compareInlineClear" onClick={onClear}>
+          Clear all
+        </button>
       </div>
-      <div className="dashMarketSample">Based on {s.sample_size} report{s.sample_size === 1 ? "" : "s"}</div>
-    </div>
+      <div className="compareInlineTableWrap">
+        <table className="compareInlineTable">
+          <thead>
+            <tr>
+              <th></th>
+              {comparing.map((h) => (
+                <th key={h.id}>
+                  <div className="compareColHead">
+                    <Link href={`/dashboard/${encodeAddress(h.address)}`} className="compareColAddr">
+                      {h.address}
+                    </Link>
+                    <button
+                      type="button"
+                      className="compareColRemove"
+                      onClick={() => onRemove(h.id)}
+                      aria-label="Remove from comparison"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            <CompareRow
+              label="Asking Price"
+              cells={comparing.map((h) => formatMoneyFull(h.report.asking_price))}
+            />
+            <CompareRow
+              label="Your Offer Range"
+              cells={comparing.map(
+                (h) => `${formatMoney(h.report.offer_low)}–${formatMoney(h.report.offer_high)}`
+              )}
+              accent
+            />
+            <CompareRow
+              label="Negotiability Score"
+              cells={comparing.map((h) => `${h.report.negotiability_score} / 10`)}
+            />
+            <CompareRow
+              label="Days on Market"
+              cells={comparing.map((h) => h.report.days_on_market ?? "—")}
+            />
+            <CompareRow
+              label="Price Cuts"
+              cells={comparing.map((h) => h.report.price_cuts ?? 0)}
+            />
+            <CompareRow
+              label="Zestimate Gap"
+              cells={comparing.map((h) =>
+                h.report.zestimate_gap != null ? formatMoney(h.report.zestimate_gap) : "—"
+              )}
+            />
+            <CompareRow
+              label="Submarket"
+              cells={comparing.map((h) => getMarketKey(h.report) || "—")}
+            />
+            <tr>
+              <th></th>
+              {comparing.map((h) => (
+                <td key={h.id}>
+                  <Link
+                    href={`/dashboard/${encodeAddress(h.address)}`}
+                    className="compareViewBtn"
+                  >
+                    View full report
+                  </Link>
+                </td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
-function AddHomeModal({ token, onClose, onSaved, onPurchase }) {
+function CompareRow({ label, cells, accent }) {
+  return (
+    <tr className={accent ? "compareRowAccent" : ""}>
+      <th>{label}</th>
+      {cells.map((v, i) => (
+        <td key={i}>{v}</td>
+      ))}
+    </tr>
+  );
+}
+
+function AddHomeModal({ token, onClose, onSaved }) {
   const [url, setUrl] = useState("");
   const [address, setAddress] = useState("");
   const [needsAddress, setNeedsAddress] = useState(false);

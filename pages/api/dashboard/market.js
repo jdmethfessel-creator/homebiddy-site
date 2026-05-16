@@ -1,9 +1,12 @@
 import { getUserFromRequest } from "../../../lib/auth-server";
 import { getSupabaseAdmin } from "../../../lib/supabase-server";
-import { aggregateNeighborhood } from "../../../lib/market-intel";
+import {
+  aggregateNeighborhood,
+  getMarketKey,
+} from "../../../lib/market-intel";
 
 const FIELDS =
-  "neighborhood, asking_price, offer_low, days_on_market, price_cuts, appreciation_rate_annual";
+  "address, neighborhood, asking_price, offer_low, days_on_market, price_cuts, appreciation_rate_annual";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {
@@ -15,43 +18,62 @@ export default async function handler(req, res) {
 
   const supabase = getSupabaseAdmin();
 
-  // Find neighborhoods represented in this user's saved homes.
   const { data: homes } = await supabase
     .from("saved_homes")
     .select("address")
     .eq("user_id", auth.user.id);
   if (!homes || homes.length === 0) {
-    return res.status(200).json({ neighborhoods: [] });
+    return res.status(200).json({ markets: [] });
   }
   const addresses = homes.map((h) => h.address);
-  const { data: reports } = await supabase
+  const { data: userReports } = await supabase
     .from("reports")
     .select(FIELDS)
     .in("address", addresses);
-  const targetNeighborhoods = Array.from(
-    new Set((reports || []).map((r) => r.neighborhood).filter(Boolean))
-  );
-  if (targetNeighborhoods.length === 0) {
-    return res.status(200).json({ neighborhoods: [] });
+
+  // Map saved address → market key so we can count user homes per submarket.
+  const userMarketKeys = new Map(); // marketKey → count
+  const userReportByAddress = new Map();
+  (userReports || []).forEach((r) => {
+    userReportByAddress.set(r.address, r);
+    const key = getMarketKey(r);
+    if (key) userMarketKeys.set(key, (userMarketKeys.get(key) || 0) + 1);
+  });
+
+  const targetKeys = Array.from(userMarketKeys.keys());
+  if (targetKeys.length === 0) {
+    return res.status(200).json({ markets: [] });
   }
 
-  // Aggregate across ALL reports in those neighborhoods (broader sample).
+  // Pull broader comp set: all reports whose computed market key matches
+  // ANY of the user's submarkets. We query by neighborhood IN (...) — only
+  // catches rows where neighborhood is explicitly set. For null neighborhoods
+  // we'd need to scan by address, but that's a much wider query; skip it.
   const { data: allReports } = await supabase
     .from("reports")
     .select(FIELDS)
-    .in("neighborhood", targetNeighborhoods);
+    .in("neighborhood", targetKeys);
 
   const groups = new Map();
   for (const r of allReports || []) {
-    if (!r.neighborhood) continue;
-    if (!groups.has(r.neighborhood)) groups.set(r.neighborhood, []);
-    groups.get(r.neighborhood).push(r);
+    const key = getMarketKey(r);
+    if (!key) continue;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(r);
   }
 
-  const out = targetNeighborhoods.map((n) => ({
-    neighborhood: n,
-    summary: aggregateNeighborhood(groups.get(n) || []),
-  }));
+  // For any market key only present in user data with no aggregated set,
+  // fall back to the user's own report so we still have a card.
+  const out = targetKeys.map((key) => {
+    const set = groups.get(key) && groups.get(key).length > 0
+      ? groups.get(key)
+      : (userReports || []).filter((r) => getMarketKey(r) === key);
+    return {
+      market: key,
+      saved_count: userMarketKeys.get(key) || 0,
+      summary: aggregateNeighborhood(set),
+    };
+  });
 
-  return res.status(200).json({ neighborhoods: out });
+  return res.status(200).json({ markets: out });
 }

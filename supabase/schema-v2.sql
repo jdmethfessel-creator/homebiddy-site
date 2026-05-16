@@ -79,7 +79,7 @@ insert into public.reports (
 ) values (
   '442 28th St, West Palm Beach FL 33407',
   1995000, 1780000, 1850000, 8.2,
-  136, 2, 110000, 'West Palm Beach',
+  136, 2, 110000, 'Old Northwood',
   0.038, 4, 3, 2610,
   jsonb_build_object(
     'insights', jsonb_build_array(

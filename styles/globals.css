@@ -1909,6 +1909,364 @@ input {
   margin-top: 2px;
 }
 
+/* ============================================================================
+   v3 dashboard command-center surfaces
+   ============================================================================ */
+
+/* --- Best Value hero refinements --- */
+.dashBestTopRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.dashBestPill {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  padding: 4px 10px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.dashBestPill_buy {
+  background: #10B981;
+  color: #fff;
+}
+.dashBestPill_monitor {
+  background: #F59E0B;
+  color: #fff;
+}
+
+.dashBestPriceBlock {
+  margin-top: 14px;
+}
+.dashBestListLine {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: rgba(219, 234, 254, 0.8);
+  text-transform: uppercase;
+  font-weight: 600;
+}
+.dashBestListLine span {
+  color: #fff;
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  margin-left: 4px;
+}
+.dashBestOfferLabel {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: rgba(219, 234, 254, 0.85);
+  text-transform: uppercase;
+  margin-top: 10px;
+  font-weight: 700;
+}
+.dashBestOfferRange {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 700;
+  font-size: 30px;
+  color: #fff;
+  letter-spacing: -0.01em;
+  margin-top: 2px;
+  line-height: 1.1;
+}
+
+/* --- Submarket badge + signal-bar variants on home cards --- */
+.dashCard {
+  border-left-width: 5px;
+  border-left-style: solid;
+  border-left-color: var(--dash-border);
+}
+.dashCard_green { border-left-color: #10B981; }
+.dashCard_amber { border-left-color: #F59E0B; }
+.dashCard_red   { border-left-color: #EF4444; }
+.dashCard_muted { border-left-color: var(--dash-border); }
+
+.dashCardHeaderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dashSubmarketBadge {
+  display: inline-block;
+  background: var(--dash-blue-50);
+  color: var(--dash-blue-700);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--dash-blue-200);
+  max-width: 65%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dashSubmarketBadgeMuted {
+  background: transparent;
+  color: var(--dash-muted);
+  border-color: var(--dash-border);
+}
+
+.dashCompareCheck {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dash-blue-700);
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.dashCompareCheck input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--dash-blue-600);
+  cursor: pointer;
+  margin: 0;
+}
+
+.dashCardAddress {
+  margin-top: 6px;
+}
+
+.dashCardAsking {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 700;
+  font-size: 24px;
+  color: var(--dash-ink);
+  line-height: 1.1;
+  margin-top: 4px;
+  letter-spacing: -0.01em;
+}
+
+.dashCardOfferRow {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.dashCardOfferRow .dashCardOfferVal {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--dash-blue-700);
+  line-height: 1.2;
+}
+
+.dashCardSecondary {
+  background: transparent;
+  border: none;
+  color: var(--dash-muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 4px 0;
+}
+.dashCardSecondary:hover { color: var(--dash-blue-700); }
+
+/* --- Market intelligence section --- */
+.dashMarketSection { margin-bottom: 22px; }
+
+.dashMarketHeaderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.dashMarketBadge_hot {
+  background: #FEF3C7;
+  color: #92400E;
+}
+.dashMarketBadge_buyers {
+  background: #DCFCE7;
+  color: #047857;
+}
+.dashMarketBadge_neutral {
+  background: #F1F5F9;
+  color: var(--dash-muted);
+}
+
+/* --- Inline comparison panel (replaces /dashboard/compare) --- */
+.compareInline {
+  margin-top: 22px;
+  background: var(--dash-surface);
+  border: 1px solid var(--dash-border);
+  border-radius: 14px;
+  padding: 18px 18px 14px;
+  box-shadow: var(--dash-shadow-md);
+  animation: compareSlide 0.22s ease;
+}
+
+@keyframes compareSlide {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.compareInlineHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.compareInlineTitle {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 700;
+  font-size: 17px;
+  color: var(--dash-ink);
+  margin: 0;
+  letter-spacing: -0.005em;
+}
+
+.compareInlineClear {
+  background: none;
+  border: 1px solid var(--dash-border);
+  color: var(--dash-muted);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.compareInlineClear:hover {
+  background: var(--dash-blue-50);
+  color: var(--dash-blue-700);
+}
+
+.compareInlineTableWrap {
+  overflow-x: auto;
+  border: 1px solid var(--dash-border);
+  border-radius: 10px;
+}
+
+.compareInlineTable {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+  min-width: 520px;
+}
+
+.compareInlineTable thead th {
+  background: var(--dash-blue-900);
+  color: #fff;
+  padding: 10px 12px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 12.5px;
+  letter-spacing: 0;
+}
+
+.compareInlineTable thead th:first-child {
+  background: var(--dash-blue-900);
+  width: 130px;
+}
+
+.compareInlineTable tbody th {
+  font-weight: 700;
+  color: var(--dash-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 10.5px;
+  padding: 10px 12px;
+  background: var(--dash-blue-50);
+  border-bottom: 1px solid var(--dash-border);
+  width: 130px;
+  text-align: left;
+}
+
+.compareInlineTable tbody td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--dash-border);
+  color: var(--dash-ink);
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 500;
+  vertical-align: top;
+}
+
+.compareInlineTable tbody tr:last-child td,
+.compareInlineTable tbody tr:last-child th {
+  border-bottom: none;
+}
+
+.compareRowAccent td {
+  color: var(--dash-blue-700);
+  font-weight: 700;
+}
+
+.compareColHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.compareColAddr {
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-family: "DM Sans", sans-serif;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: 0;
+}
+.compareColAddr:hover { text-decoration: underline; }
+
+.compareColRemove {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  border: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.compareColRemove:hover { background: rgba(255, 255, 255, 0.32); }
+
+.compareViewBtn {
+  display: inline-block;
+  background: var(--dash-blue-600);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+.compareViewBtn:hover { background: var(--dash-blue-700); }
+
+.compareLimitNote {
+  margin-top: 14px;
+  background: #FEF3C7;
+  color: #92400E;
+  border: 1px solid #FDE68A;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  text-align: center;
+}
+
 /* === Shopping timeline === */
 .dashTimeline {
   display: grid;
