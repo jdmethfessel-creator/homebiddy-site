@@ -1347,12 +1347,28 @@ function ValueBreakdownCard({ unlockedHomes, psfByMarket }) {
     );
   }
 
-  // Look up neighborhood avg psf for each winner so bars scale relative
-  // to the market rather than rendering full-width.
+  // Neighborhood avg psf for each winner. Primary source: Claude's own
+  // comp_avg_psf from tiles (which is the mean of the closed-comp set
+  // Claude pulled for that property — independent of how many other
+  // HomeBiddy users have analyzed homes in this submarket). Fallback:
+  // psfByMarket aggregated from saved homes in the same submarket.
+  function compAvgPsfFor(home) {
+    const r = home?.report;
+    const tile = Number(r?.data?.tiles?.comp_avg_psf);
+    if (tile > 0) return tile;
+    const comps = Array.isArray(r?.data?.comps) ? r.data.comps : [];
+    const psfs = comps.map((c) => Number(c?.psf)).filter((v) => v > 0);
+    if (psfs.length > 0) {
+      return psfs.reduce((s, v) => s + v, 0) / psfs.length;
+    }
+    return null;
+  }
   const livingMarket =
-    livingWinner && psfByMarket
+    (livingWinner && compAvgPsfFor(livingWinner.home)) ||
+    (livingWinner && psfByMarket
       ? psfByMarket.get(getMarketKey(livingWinner.home.report))?.living
-      : null;
+      : null) ||
+    null;
   const lotMarket =
     lotWinner && psfByMarket
       ? psfByMarket.get(getMarketKey(lotWinner.home.report))?.lot
@@ -1360,8 +1376,21 @@ function ValueBreakdownCard({ unlockedHomes, psfByMarket }) {
   const livingNeighborhood = livingWinner ? getMarketKey(livingWinner.home.report) : null;
   const lotNeighborhood = lotWinner ? getMarketKey(lotWinner.home.report) : null;
 
+  if (typeof window !== "undefined") {
+    console.log("[value-breakdown]", {
+      livingWinner: livingWinner ? { addr: livingWinner.home.address, v: livingWinner.v } : null,
+      livingMarket,
+      livingPct: livingWinner ? psfBar(livingWinner.v, livingMarket) : null,
+      lotWinner: lotWinner ? { addr: lotWinner.home.address, v: lotWinner.v } : null,
+      lotMarket,
+      lotPct: lotWinner ? psfBar(lotWinner.v, lotMarket) : null,
+      landWinner: landWinner ? { addr: landWinner.home.address, v: landWinner.v } : null,
+      landPct: landWinner ? Math.round((landWinner.v / 10) * 100) : null,
+    });
+  }
+
   return (
-    <AnswerCardShell kicker="Value Breakdown" variant="auto">
+    <AnswerCardShell kicker="Best value in your list" variant="auto">
       {livingWinner && (
         <ValueWinnerRow
           label="$/sqft living"
