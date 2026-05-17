@@ -177,12 +177,28 @@ function HoverTooltip({ children, title, body }) {
 // Tooltips show methodology only — the full breakdown lives on the
 // /dashboard/[address] detail page so users get the "what" on hover and
 // the "how" when they click in.
-function ScoreTooltipBody() {
+function ScoreTooltipBody({ report }) {
+  // Build a one-line "top reason" hint from the same signals the
+  // tooltip describes. Pulled from the report row already on the table.
+  let topReason = "Near market avg";
+  const dom = Number(report?.days_on_market);
+  const avgDom = Number(report?.avg_dom);
+  const cuts = Number(report?.price_cuts) || 0;
+  const domHigh = !isNaN(dom) && !isNaN(avgDom) && avgDom > 0 && dom > avgDom;
+  if (domHigh && cuts > 0) {
+    topReason = `${dom} days + ${cuts} ${cuts === 1 ? "cut" : "cuts"}`;
+  } else if (domHigh) {
+    topReason = `${dom} days on market`;
+  } else if (cuts > 0) {
+    topReason = `${cuts} ${cuts === 1 ? "price cut" : "price cuts"}`;
+  }
   return (
     <div className="hoverTooltipLead">
       Negotiability Score (1–10). Weighted across 5 signals: days on market,
       price history, $/sqft vs closed comps, Zestimate gap, and listing
       language. Higher = more room to negotiate.
+      <br />
+      Top reason: {topReason}
     </div>
   );
 }
@@ -202,6 +218,35 @@ function dotColorForScore(score) {
   if (score >= 6) return "green";
   if (score >= 4) return "amber";
   return "red";
+}
+
+// Total-drop summary from cut_history. Returns { cuts, totalDropPct } or null.
+// Original list price = the `old` value from the OLDEST cut row (cut_history
+// is stored most-recent-first per the LISTING PRICE prompt). Current asking
+// is taken from report.asking_price (preferred) or the newest cut's `new`
+// value as fallback. totalDropPct is signed: negative when current is below
+// original (the normal case).
+function priceHistorySummary(report) {
+  const history = report?.data?.cut_history || report?.cut_history || [];
+  if (!Array.isArray(history) || history.length === 0) return null;
+  const parsed = history
+    .map((row) => {
+      const m = String(row || "").match(/\$?([\d,]+)\s*[→\-]+\s*\$?([\d,]+)/);
+      if (!m) return null;
+      const oldP = parseInt(m[1].replace(/,/g, ""), 10);
+      const newP = parseInt(m[2].replace(/,/g, ""), 10);
+      if (!oldP || !newP) return null;
+      return { oldP, newP };
+    })
+    .filter(Boolean);
+  if (parsed.length === 0) return null;
+  const cuts = Number(report?.price_cuts) || parsed.length;
+  // cut_history is newest-first, so the OLDEST entry holds the original list price.
+  const originalPrice = parsed[parsed.length - 1].oldP;
+  const currentPrice = Number(report?.asking_price) || parsed[0].newP;
+  if (!originalPrice || !currentPrice) return null;
+  const totalDropPct = ((currentPrice - originalPrice) / originalPrice) * 100;
+  return { cuts, totalDropPct, originalPrice, currentPrice };
 }
 
 // Parse the most recent cut from cut_history. Strings are formatted as
@@ -1762,7 +1807,7 @@ function RankedTable({
               <th className="rankedColPriceHistory">Price history</th>
               <SortHeader label="Asking"      sortKey="asking"        activeKey={sortKey} dir={sortDir} onSort={onSort} />
               <SortHeader label="Offer range" sortKey="offer_range"   activeKey={sortKey} dir={sortDir} onSort={onSort} className="rankedColOfferRange" />
-              <SortHeader label="Gap %"       sortKey="offer_gap_pct" activeKey={sortKey} dir={sortDir} onSort={onSort} className="rankedColGapPct" />
+              <SortHeader label="Vs ask"      sortKey="offer_gap_pct" activeKey={sortKey} dir={sortDir} onSort={onSort} className="rankedColGapPct" />
               <SortHeader label="Home sqft"   sortKey="home_sqft"     activeKey={sortKey} dir={sortDir} onSort={onSort} />
               <SortHeader label="Lot sqft"    sortKey="lot_sqft"      activeKey={sortKey} dir={sortDir} onSort={onSort} />
               <SortHeader label="$/sqft"      sortKey="psf"           activeKey={sortKey} dir={sortDir} onSort={onSort} />
@@ -1784,7 +1829,6 @@ function RankedTable({
                 dir={sortDir}
                 onSort={onSort}
               />
-              <SortHeader label="Land"        sortKey="land"          activeKey={sortKey} dir={sortDir} onSort={onSort} />
               <SortHeader label="DOM"         sortKey="dom"           activeKey={sortKey} dir={sortDir} onSort={onSort} />
               <SortHeader label="Monthly"     sortKey="monthly"       activeKey={sortKey} dir={sortDir} onSort={onSort} />
               <th className="rankedColDeal">Deal</th>
@@ -1852,6 +1896,7 @@ function RankedRow({
   const ceilingRisk = unlocked && hasCeilingRisk(r);
   const ceilingFloorPct = ceilingRisk ? ceilingEstFloorPct(r) : null;
   const priceChange = unlocked ? parseLatestPriceChange(r) : null;
+  const priceHistory = unlocked ? priceHistorySummary(r) : null;
   // Deal bar tracks negotiability score directly: 9.0 → 90% width, 4.6 → 46%.
   const negScore = unlocked ? Number(r.negotiability_score) : null;
   const dealPct =
@@ -1909,12 +1954,12 @@ function RankedRow({
         )}
       </td>
       <td className="rankedColPriceHistory">
-        {priceChange && priceChange.delta !== 0 ? (
+        {priceHistory && priceHistory.cuts > 0 ? (
           <span
-            className={`rankPriceChange ${priceChange.delta < 0 ? "priceChangeCut" : "priceChangeUp"}`}
-            title={`${formatMoney(priceChange.oldPrice)} → ${formatMoney(priceChange.newPrice)}`}
+            className={`rankPriceChange ${priceHistory.totalDropPct < 0 ? "priceChangeCut" : "priceChangeUp"}`}
+            title={`${formatMoney(priceHistory.originalPrice)} → ${formatMoney(priceHistory.currentPrice)}`}
           >
-            {priceChange.delta < 0 ? "↓" : "↑"} {priceChange.delta < 0 ? "cut" : "raised"} {formatShortDollars(priceChange.delta)} {priceChange.when}
+            {priceHistory.cuts} {priceHistory.cuts === 1 ? "cut" : "cuts"}, {priceHistory.totalDropPct > 0 ? "+" : ""}{priceHistory.totalDropPct.toFixed(0)}%
           </span>
         ) : (
           <span className="dashMuted">—</span>
@@ -1935,9 +1980,9 @@ function RankedRow({
       <td className="rankedColGapPct">
         {unlocked && home.savings != null && r.asking_price ? (
           <span className="rankGapWrap">
-            <span className="rankGapPctSolo">
+            <strong className="rankGapPctSolo">
               {((home.savings / r.asking_price) * 100).toFixed(0)}%
-            </span>
+            </strong>
             {ceilingRisk && (
               <HoverTooltip title={CEILING_TOOLTIP_TITLE} body={CEILING_TOOLTIP_BODY}>
                 <span className="rankGapOutlier" aria-label="Renovated outlier — comp gap may not reflect a realistic floor">ⓘ</span>
@@ -1984,7 +2029,7 @@ function RankedRow({
         {unlocked ? (
           <HoverTooltip
             title="Negotiability score"
-            body={<ScoreTooltipBody />}
+            body={<ScoreTooltipBody report={r} />}
           >
             <span className="rankScore">
               <span className={`scoreDot scoreDot_${dot}`} />
@@ -1993,21 +2038,6 @@ function RankedRow({
           </HoverTooltip>
         ) : (
           <span className="dashBlur">X</span>
-        )}
-      </td>
-      <td>
-        {unlocked && r.land_arbitrage_score != null ? (
-          <HoverTooltip
-            title="Land arbitrage"
-            body={<LandTooltipBody />}
-          >
-            <span className="rankScore">
-              <span className={`scoreDot scoreDot_${landDotColor(r.land_arbitrage_score)}`} />
-              {formatFinalScore(r.land_arbitrage_score)}
-            </span>
-          </HoverTooltip>
-        ) : (
-          <span className="dashMuted">—</span>
         )}
       </td>
       <td>
